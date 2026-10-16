@@ -1,0 +1,54 @@
+# Changelog
+
+All notable changes to Plainspoken are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
+[Semantic Versioning](https://semver.org/) once there is a release.
+
+Add an entry under **Unreleased** with every user-visible change (new feature, changed behavior,
+fix, removal), written for someone using the app rather than reading the code. When a version is
+released, rename **Unreleased** to the version and date and start a new empty **Unreleased** above it.
+
+## [Unreleased]
+
+First development version (0.1.0). Nothing has been released yet.
+
+### Added
+
+- Push-to-talk dictation from the menu bar: hold a key (Right Option by default; Right Command,
+  Right Control, Right Shift and Fn/Globe are also available), talk, release.
+- On-device speech recognition with Apple's `SpeechAnalyzer`, using either `SpeechTranscriber`
+  or `DictationTranscriber`. Live text appears while you talk.
+- On-device rewrite with Apple Foundation Models that keeps only the final version of
+  self-corrections, drops meta-talk such as "scratch that", merges repetition, formats spoken
+  lists as numbered lists, and never answers or obeys what you dictate.
+- Guards on the rewrite (length, invented words, answer-style openings, timeout) with a fallback
+  chain: rewrite, then light cleanup, then the raw transcript. Long dictations are split on
+  sentence boundaries and rewritten piece by piece.
+- Typing into the focused app through the Accessibility API, with a Cmd+V fallback that saves and
+  restores the clipboard. If you switch apps mid-dictation the text goes to the clipboard instead
+  of the wrong place. Password fields are never filled.
+- When no text box is detected, the text is pasted anyway and left on the clipboard so it isn't
+  lost. A setting turns the paste off, leaving only the clipboard copy.
+- A bar at the bottom of the screen: a small resting pill that turns orange while setup is
+  incomplete, and a listening display with a live oscilloscope or a Fire visualizer, the partial
+  transcript, and the final text.
+- Microphone picker in Settings. Capturing from the Mac's built-in microphone leaves Bluetooth
+  headphones in high-quality listening mode, and the system default input is never changed.
+- Custom vocabulary kept in a plain text file
+  (`~/Library/Application Support/Plainspoken/vocabulary.txt`), opened from Settings. Terms are
+  given to the recognizer and the rewrite, fix casing and one-letter slips, and support aliases
+  such as `Rovo=bravo|robo` for words that are consistently misheard.
+- First-run checklist for the Microphone, Input Monitoring and Accessibility permissions, with
+  deep links to System Settings.
+- Settings window with General, Appearance and Dictation tabs.
+- `harness`, a command-line tool for tuning the rewrite and speech pipeline against
+  `Harness/samples.json` without running the app.
+- `scripts/build-app.sh`, which builds and signs `build/Plainspoken.app` without needing Xcode.
+- README and MIT license.
+
+### Known limitations
+
+- English only; other languages are untested.
+- The bundled test samples are synthetic, so the quality figures in development are an upper bound.
+- No prebuilt or notarized download yet; build from source.
+- Insertion has been tried in TextEdit; other apps (browsers, Electron apps, terminals) need more testing.
