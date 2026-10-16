@@ -6,9 +6,12 @@
 
 Hold a key, talk the way you think, let go. Plainspoken types what you meant into whatever app you're in.
 
+Push-to-talk dictation for macOS, with the rewrite done by **Apple's on-device Foundation Models** (Apple Intelligence).
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black)
 ![Apple silicon](https://img.shields.io/badge/Apple%20silicon-required-lightgrey)
+![Apple Foundation Models](https://img.shields.io/badge/Apple%20Foundation%20Models-on--device-blueviolet)
 ![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange)
 ![Status: early](https://img.shields.io/badge/status-early-yellow)
 
@@ -20,7 +23,7 @@ Hold a key, talk the way you think, let go. Plainspoken types what you meant int
 
 Ordinary dictation writes down everything you say: the false starts, the "um, actually, no", the three attempts at the same sentence. You end up editing more than you saved.
 
-Plainspoken is a free, open source menu bar app for macOS that fixes that. It listens while you hold a key, then types the version of the text you would have written if you'd composed it carefully, in your own words. All of it runs on your Mac, using Apple's on-device speech recognition and Apple's on-device language model. There are no servers, accounts, API keys or third-party dependencies.
+Plainspoken is a free, open source menu bar app for macOS that fixes that. It listens while you hold a key, then types the version of the text you would have written if you'd composed it carefully, in your own words. The cleanup is done by Apple's Foundation Models, the on-device language model behind Apple Intelligence, and the speech recognition is Apple's on-device speech framework. Plainspoken ships no model of its own and calls no cloud service: no servers, accounts, API keys or third-party dependencies.
 
 ```
 you say:   "let's meet Tuesday no wait Thursday afternoon and send the notes to Priya
@@ -51,11 +54,19 @@ it types:  "Let's meet Thursday afternoon and send the notes to the whole team."
 - **Pick your microphone.** Use the built-in mic while wearing Bluetooth headphones and they stay in high-quality listening mode.
 - **Custom vocabulary.** Names and product terms live in a plain text file you edit anywhere, with aliases for words the recognizer keeps mishearing.
 
+## Built on Apple Foundation Models
+
+The rewrite step, the part that turns "Tuesday, no wait, Thursday" into "Thursday", is Apple's [Foundation Models framework](https://developer.apple.com/documentation/foundationmodels): the roughly 3-billion-parameter model that powers Apple Intelligence, running locally on your Mac's Neural Engine and GPU. Plainspoken wraps it with a fixed prompt, guards that reject bad output, and fallbacks.
+
+- **Nothing to install.** The model is part of macOS 26. You turn Apple Intelligence on in System Settings and macOS downloads the model once.
+- **Needed for the rewrite, not for transcription.** Speech recognition uses a separate Apple on-device speech model. If Apple Intelligence is off or unavailable, Plainspoken falls back to light cleanup (fillers, spacing, capitalization) and tells you why, so you get a plain transcript instead of a rewritten one.
+- **Availability is Apple's call.** Apple Intelligence has to be supported on your Mac, region and language. If it isn't, expect the light-cleanup fallback.
+
 ## Requirements
 
 - macOS 26 (Tahoe) or later
 - Apple silicon
-- Apple Intelligence turned on (System Settings > Apple Intelligence & Siri) for the rewrite. Without it you still get transcription, with light cleanup instead of a rewrite.
+- **Apple Intelligence turned on** (System Settings > Apple Intelligence & Siri), because the rewrite runs on Apple's on-device Foundation Models. Without it you still get transcription, with light cleanup instead of a rewrite.
 - To build from source: Swift 6.2 or later. The Xcode Command Line Tools (`xcode-select --install`) are enough; full Xcode isn't required.
 
 English is the only language it has been tested in.
