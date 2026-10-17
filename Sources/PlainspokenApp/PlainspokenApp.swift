@@ -50,7 +50,7 @@ struct MenuView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(Permission.allCases) { p in
+                ForEach(state.requiredPermissions) { p in
                     PermissionRow(permission: p, granted: state.granted[p] == true)
                 }
             }
@@ -165,12 +165,17 @@ struct GeneralSettingsTab: View {
         Form {
             Section {
                 Picker("Key", selection: $state.hotkey) {
-                    ForEach(HotkeyKey.allCases) { Text($0.label).tag($0) }
+                    Section("No extra permission") {
+                        ForEach(HotkeyKey.functionKeys) { Text($0.label).tag($0) }
+                    }
+                    Section("Needs Input Monitoring") {
+                        ForEach(HotkeyKey.modifierKeys) { Text($0.label).tag($0) }
+                    }
                 }
             } header: {
                 Text("Hold to talk")
             } footer: {
-                Text("Fn/Globe can clash with the system's dictation and emoji shortcuts.")
+                Text("Function keys need no Input Monitoring permission. On most laptops, hold Fn with them or turn on \"Use F1, F2, etc. keys as standard function keys\" in Keyboard settings. Fn/Globe can clash with the system's dictation and emoji shortcuts.")
             }
 
             Section {
