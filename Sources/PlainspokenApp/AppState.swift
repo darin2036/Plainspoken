@@ -484,7 +484,8 @@ final class AppState {
             let transcribeTime = heardAt.timeIntervalSince(releasedAt)
             if result.stage != .rewrite {
                 statusNote = "Rewrite fell back to \(result.stage.label): \(result.failure ?? "unknown reason")"
-                log.error("rewrite fallback: \(result.failure ?? "?", privacy: .public)")
+                // The failure text can quote words from the transcript, so it goes to the UI only, never the log.
+                log.error("rewrite fell back to \(result.stage.rawValue, privacy: .public)")
             }
 
             // Type it into the app that had focus when recording started.

@@ -12,8 +12,13 @@ released, rename **Unreleased** to the version and date and start a new empty **
 
 First development version (0.1.0). Nothing has been released yet.
 
+### Fixed
+
+- A rewrite fallback no longer writes the guard's reason to the system log, because for some guards it quoted words from what you dictated. Logs now hold only timings and error types.
+
 ### Added
 
+- A Privacy note at the top of Settings > General, and a rewritten Privacy and control section in the README, stating that the app runs locally with no cloud services and exactly when it goes online.
 - Optional Whisper speech engine (Settings > Dictation) for accents the Apple engines struggle with. Three sizes; picking Whisper asks which size to download and states its size first; nothing is fetched otherwise. If the model is missing or the download fails, the app falls back to Apple's engine. Downloaded models can be removed in Settings.
 - A "Help me choose" pop-up in Settings > Dictation with quick picks by situation (accent, speech difference, noisy room, disk space) and the benefits and trade-offs of each engine and Whisper size. It works with VoiceOver and the keyboard.
 - A language and accent picker (Settings > Dictation) to choose a regional speech model such as English (Australia) or English (India) instead of always following the system locale.
