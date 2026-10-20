@@ -44,6 +44,7 @@ final class AppState {
         didSet {
             Prefs.hotkey = hotkey
             monitor.key = hotkey
+            attemptHotkeyTap()
         }
     }
 
@@ -172,7 +173,12 @@ final class AppState {
     /// How many entries the vocabulary file currently holds (the file is the source of truth).
     private(set) var vocabularyCount = 0
 
-    var allGranted: Bool { Permission.allCases.allSatisfy { granted[$0] == true } }
+    /// Input Monitoring is only needed to watch a modifier key; function keys are a plain hotkey.
+    var requiredPermissions: [Permission] {
+        Permission.allCases.filter { $0 != .inputMonitoring || hotkey.isModifier }
+    }
+
+    var allGranted: Bool { requiredPermissions.allSatisfy { granted[$0] == true } }
 
     @ObservationIgnored private let monitor = HotkeyMonitor()
     @ObservationIgnored private let audio = AudioCapture()
@@ -217,7 +223,7 @@ final class AppState {
         }
 
         // First launch: surface the checklist's system prompts right away.
-        for p in Permission.allCases where p != .accessibility && !p.isGranted { p.request() }
+        for p in requiredPermissions where p != .accessibility && !p.isGranted { p.request() }
         prepareSpeechModel()
 
         // Dev hook: `Plainspoken --insert-test "text" [seconds] [paste]` waits, then inserts into the

@@ -17,9 +17,10 @@ swift build -c "$CONFIG" --product Plainspoken
 BIN="$(swift build -c "$CONFIG" --show-bin-path)/Plainspoken"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Plainspoken"
 cp App/Info.plist "$APP/Contents/Info.plist"
+cp App/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # Stamp the build so Settings can show exactly what is running: the build number is the commit
 # count, and a "-dirty" suffix marks uncommitted changes. The release version stays in App/Info.plist.
