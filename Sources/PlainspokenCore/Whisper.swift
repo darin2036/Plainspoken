@@ -75,8 +75,26 @@ public enum WhisperStore {
     }
 
     /// Written once a download finishes, so a half-finished download never counts as installed.
+    /// Its contents are the repository revision the download came from.
     private static func marker(for model: WhisperModel) -> URL {
         folder(for: model).appendingPathComponent(".plainspoken-complete")
+    }
+
+    /// The Hugging Face commit the model was downloaded from, so a later update check can tell
+    /// whether the repository has moved on. Nil for installs that predate this or if the lookup failed.
+    public static func installedRevision(_ model: WhisperModel) -> String? {
+        guard let text = try? String(contentsOf: marker(for: model), encoding: .utf8) else { return nil }
+        let revision = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return revision.isEmpty ? nil : revision
+    }
+
+    /// Latest commit of the model repository. Best effort: a failure just means no revision is recorded.
+    private static func latestRevision() async -> String? {
+        guard let url = URL(string: "https://huggingface.co/api/models/\(repo)"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return json["sha"] as? String
     }
 
     public static func isInstalled(_ model: WhisperModel) -> Bool {
@@ -104,10 +122,12 @@ public enum WhisperStore {
         if !isInstalled(model) {
             guard allowDownload else { throw WhisperSetupError.notInstalled }
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+            // Read the revision first so it names what we are about to fetch, not something newer.
+            let revision = await latestRevision()
             _ = try await WhisperKit.download(variant: model.variant, downloadBase: base, from: repo) { p in
                 progress(p.fractionCompleted)
             }
-            try Data().write(to: marker(for: model))
+            try Data((revision ?? "").utf8).write(to: marker(for: model))
         }
         try await WhisperRuntime.shared.load(model)
         progress(1)
