@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import PlainspokenCore
 
+// Whisper: --engine whisper [--whisper-model fast|balanced|accurate] (downloads the model if missing)
 // Usage: harness [samples.json] [--temp 0.2] [--no-schema] [--only N] [--instructions file.txt] [--runs K]
 // samples.json: [{ "raw": "...", "ideal": "...", "category": "optional" }]
 
@@ -11,6 +12,7 @@ struct Sample: Decodable {
     var category: String?
 }
 
+NetworkGuard.install()
 var path = "Harness/samples.json"
 var config = RewriterConfig()
 var only: Int?
@@ -18,6 +20,7 @@ var runs = 1
 var pipeline = false  // run the full fallback chain and show what the user would actually get
 var audioPath: String?  // --transcribe: run an audio file through the speech stack instead of samples.json
 var engine = SpeechEngine.speechTranscriber
+var whisperModel = WhisperModel.balanced
 var vocabulary: [String] = []  // --vocab "Jira,Rovo": custom terms for the rewrite hint and correction
 var stress = 0  // --stress N: repeat every sample N times as one long transcript to exercise chunking
 var oneOff: String?  // --text "...": run one transcript through the pipeline
@@ -32,8 +35,28 @@ while !argv.isEmpty {
     case "--schema": config.structuredOutput = true
     case "--pipeline": pipeline = true
     case "--transcribe": audioPath = argv.removeFirst()
-    case "--engine": engine = argv.removeFirst().hasPrefix("d") ? .dictationTranscriber : .speechTranscriber
+    case "--engine":
+        let name = argv.removeFirst()
+        engine = name.hasPrefix("w") ? .whisper : name.hasPrefix("d") ? .dictationTranscriber : .speechTranscriber
+    case "--whisper-model": whisperModel = WhisperModel(rawValue: argv.removeFirst()) ?? whisperModel
     case "--rewrite": rewriteTranscript = true
+    case "--check-update":
+        // --check-update <current version> [owner/repo]
+        let current = argv.removeFirst()
+        let repo = argv.first.flatMap { $0.hasPrefix("-") ? nil : $0 } ?? UpdateChecker.repo
+        for (a, b) in [("0.2.0", "0.1.9"), ("v1.0.0", "0.9.9"), ("0.1.0", "0.1.0"), ("0.1.1", "0.1.10"), ("1.2", "1.2.0"), ("2.0.0-beta.1", "1.9.0")] {
+            print("isNewer(\(a), than: \(b)) = \(UpdateChecker.isNewer(a, than: b))")
+        }
+        do { print("live check (\(repo)) from \(current): \(try await UpdateChecker.check(current: current, repo: repo))") }
+        catch { print("live check failed: \(error)") }
+        exit(0)
+    case "--probe-network":
+        // Proves the guard: a request outside a download window must fail.
+        do {
+            _ = try await URLSession.shared.data(from: URL(string: "https://huggingface.co")!)
+            print("probe: REQUEST WENT THROUGH (guard failed)")
+        } catch { print("probe: blocked as expected (\(error.localizedDescription))") }
+        exit(0)
     case "--vocab": vocabulary = argv.removeFirst().split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
     case "--stress": stress = Int(argv.removeFirst()) ?? 1
     case "--text": oneOff = argv.removeFirst()
@@ -49,17 +72,24 @@ if let audioPath {
     do {
         let file = try AVAudioFile(forReading: URL(fileURLWithPath: audioPath))
         var lastDownload = -1
-        let locale = try await SpeechAssets.prepare(engine: engine) { p in
+        let report: @Sendable (Double) -> Void = { p in
             let pct = Int(p * 100)
             if pct / 10 != lastDownload / 10 { lastDownload = pct; print("downloading speech model… \(pct)%") }
+        }
+        var locale = Locale.current
+        if engine == .whisper {
+            try await WhisperStore.prepare(whisperModel, allowDownload: true, progress: report)
+        } else {
+            locale = try await SpeechAssets.prepare(engine: engine, progress: report)
         }
         print("engine=\(engine.rawValue) locale=\(locale.identifier) file=\(audioPath) (\(String(format: "%.1f", Double(file.length) / file.processingFormat.sampleRate))s)")
 
         // Without --vocab, use the same vocabulary file the app uses.
         let vocab = vocabulary.isEmpty ? VocabularyFile.load() : vocabulary
         let started = Date()
-        let session = try await TranscriptionSession.start(
+        let session = try await Dictation.start(
             engine: engine,
+            whisperLanguage: Locale.current.language.languageCode?.identifier,
             vocabulary: vocab,
             onPartial: { print("  partial: \($0)") }
         )

@@ -7,6 +7,15 @@ import PlainspokenCore
 
 private let log = Logger(subsystem: "io.github.darin2036.Plainspoken", category: "app")
 
+enum UpdateStatus: Equatable {
+    case idle
+    case checking
+    case upToDate
+    case noReleases
+    case available(AvailableUpdate)
+    case failed
+}
+
 enum SpeechModelState: Equatable {
     case preparing(Double?)  // download fraction, nil while just checking
     case ready
@@ -81,6 +90,86 @@ final class AppState {
         }
     }
 
+    var whisperModel: WhisperModel = Prefs.whisperModel {
+        didSet {
+            Prefs.whisperModel = whisperModel
+            if engine == .whisper { prepareSpeechModel() }
+        }
+    }
+
+    /// Whisper language code; empty follows the system language.
+    var whisperLanguage: String = Prefs.whisperLanguage {
+        didSet { Prefs.whisperLanguage = whisperLanguage }
+    }
+
+    /// Set when the user picks a Whisper model that isn't downloaded yet; settings asks them to
+    /// confirm the download before anything is fetched.
+    var pendingWhisperDownload: WhisperModel?
+    /// Set when Whisper is picked with no model installed: settings asks which size to download.
+    var choosingWhisperModel = false
+    /// Models the user has agreed to download. Nothing else ever triggers a Whisper download.
+    @ObservationIgnored private var approvedWhisperDownloads: Set<WhisperModel> = []
+    /// Bumped when a model is downloaded or removed so settings re-reads what is installed.
+    private(set) var whisperStoreVersion = 0
+
+    private(set) var updateStatus = UpdateStatus.idle
+
+    var autoCheckUpdates: Bool = Prefs.autoCheckUpdates {
+        didSet { Prefs.autoCheckUpdates = autoCheckUpdates }
+    }
+
+    /// The running version, from the app bundle. Nil when run outside a bundle (swift run).
+    var currentVersion: String? {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    }
+
+    /// "0.1.0 (build 12, a1b2c3d)" for display. Build and commit are stamped by scripts/build-app.sh.
+    var versionDescription: String {
+        guard let version = currentVersion else { return "development build" }
+        let info = Bundle.main.infoDictionary
+        var details: [String] = []
+        if let build = info?["CFBundleVersion"] as? String { details.append("build \(build)") }
+        if let commit = info?["PlainspokenCommit"] as? String { details.append(commit) }
+        return details.isEmpty ? version : "\(version) (\(details.joined(separator: ", ")))"
+    }
+
+    /// Asks GitHub for the latest release. `automatic` checks run quietly at most once a day and
+    /// say nothing on failure; a manual check always reports what happened.
+    func checkForUpdates(automatic: Bool = false) {
+        guard let current = currentVersion else { return }
+        if automatic {
+            guard autoCheckUpdates, Date().timeIntervalSince(Prefs.lastUpdateCheck) > 24 * 3600 else { return }
+        }
+        if case .checking = updateStatus { return }
+        updateStatus = .checking
+        Task { [weak self] in
+            do {
+                let result = try await UpdateChecker.check(current: current)
+                Prefs.lastUpdateCheck = Date()
+                switch result {
+                case .upToDate: self?.updateStatus = .upToDate
+                case .noReleases: self?.updateStatus = .noReleases
+                case .available(let update): self?.updateStatus = .available(update)
+                }
+            } catch {
+                log.error("update check failed: \(String(describing: error), privacy: .public)")
+                self?.updateStatus = automatic ? .idle : .failed
+            }
+        }
+    }
+
+    func openUpdatePage(_ update: AvailableUpdate) {
+        NSWorkspace.shared.open(update.url)
+    }
+
+    /// Recognition locale identifier; empty follows the system locale.
+    var localeID: String = Prefs.localeID {
+        didSet {
+            Prefs.localeID = localeID
+            prepareSpeechModel()
+        }
+    }
+
     /// How many entries the vocabulary file currently holds (the file is the source of truth).
     private(set) var vocabularyCount = 0
 
@@ -118,6 +207,7 @@ final class AppState {
         monitor.onRelease = { [weak self] in MainActor.assumeIsolated { self?.endRecording() } }
 
         Prefs.migrateVocabularyToFile()
+        checkForUpdates(automatic: true)
         refresh()
         hud.setIdleEnabled(showIdleIndicator)
         // Microphones come and go (headphones connect, USB mics get plugged in).
@@ -227,14 +317,77 @@ final class AppState {
 
     // MARK: Speech model
 
+    /// Picks an engine. Choosing Whisper with no model on disk asks first instead of downloading.
+    func chooseEngine(_ new: SpeechEngine) {
+        guard new == .whisper, !WhisperStore.isInstalled(whisperModel) else {
+            engine = new
+            return
+        }
+        if let installed = WhisperModel.allCases.first(where: WhisperStore.isInstalled) {
+            whisperModel = installed
+            engine = .whisper
+        } else {
+            choosingWhisperModel = true
+        }
+    }
+
+    /// Picks a Whisper size. A size that isn't downloaded yet asks first.
+    func chooseWhisperModel(_ new: WhisperModel) {
+        if WhisperStore.isInstalled(new) {
+            whisperModel = new
+        } else {
+            pendingWhisperDownload = new
+        }
+    }
+
+    /// The user agreed to the download prompt: switch to Whisper and fetch the model.
+    /// Switches to an engine from the "Help me choose" sheet, asking first if a download is needed.
+    func use(_ engine: SpeechEngine, whisper size: WhisperModel? = nil) {
+        guard engine == .whisper, let size else { chooseEngine(engine); return }
+        if WhisperStore.isInstalled(size) {
+            whisperModel = size
+            self.engine = .whisper
+        } else {
+            pendingWhisperDownload = size
+        }
+    }
+
+    func downloadWhisper(_ model: WhisperModel) {
+        choosingWhisperModel = false
+        pendingWhisperDownload = model
+        confirmWhisperDownload()
+    }
+
+    func confirmWhisperDownload() {
+        guard let model = pendingWhisperDownload else { return }
+        pendingWhisperDownload = nil
+        approvedWhisperDownloads.insert(model)
+        let modelChanges = whisperModel != model, engineChanges = engine != .whisper
+        // Each assignment below prepares at most once, and the last one decides.
+        if modelChanges { whisperModel = model }
+        if engineChanges { engine = .whisper }
+        if !modelChanges && !engineChanges { prepareSpeechModel() }
+    }
+
+    func removeWhisperModel(_ model: WhisperModel) {
+        Task { [weak self] in
+            await WhisperStore.remove(model)
+            guard let self else { return }
+            whisperStoreVersion += 1
+            if engine == .whisper, whisperModel == model { engine = .speechTranscriber }
+        }
+    }
+
     /// Installs the on-device speech model if needed (first run downloads it, then it's offline).
     func prepareSpeechModel() {
         prepareTask?.cancel()
         speechModel = .preparing(nil)
         let engine = engine
+        let requested = localeID.isEmpty ? Locale.current : Locale(identifier: localeID)
+        if engine == .whisper { prepareWhisper(); return }
         prepareTask = Task { [weak self] in
             do {
-                let locale = try await SpeechAssets.prepare(engine: engine) { fraction in
+                let locale = try await SpeechAssets.prepare(locale: requested, engine: engine) { fraction in
                     Task { @MainActor in
                         if case .preparing = self?.speechModel { self?.speechModel = .preparing(fraction) }
                     }
@@ -246,6 +399,40 @@ final class AppState {
                 guard !Task.isCancelled else { return }
                 self?.speechModel = .failed("\(error)")
                 log.error("speech model prepare failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    private func prepareWhisper() {
+        let model = whisperModel
+        let allowDownload = approvedWhisperDownloads.contains(model)
+        guard allowDownload || WhisperStore.isInstalled(model) else {
+            // Whisper is selected but its model is gone (removed, or never finished). Never
+            // download silently: go back to the built-in engine and say why.
+            statusNote = "Whisper \(model.label) isn't downloaded, so Plainspoken switched to Apple's engine."
+            engine = .speechTranscriber
+            return
+        }
+        prepareTask = Task { [weak self] in
+            do {
+                try await WhisperStore.prepare(model, allowDownload: allowDownload) { fraction in
+                    Task { @MainActor in
+                        if case .preparing = self?.speechModel { self?.speechModel = .preparing(fraction) }
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                self?.approvedWhisperDownloads.remove(model)
+                self?.whisperStoreVersion += 1
+                self?.speechModel = .ready
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.approvedWhisperDownloads.remove(model)
+                self?.whisperStoreVersion += 1
+                self?.speechModel = .failed("Whisper setup failed: \(error)")
+                log.error("whisper prepare failed: \(String(describing: error), privacy: .public)")
+                // A failed download shouldn't leave the user stuck on an engine that can't run.
+                self?.statusNote = "Whisper couldn't be set up, so Plainspoken switched to Apple's engine."
+                self?.engine = .speechTranscriber
             }
         }
     }
@@ -278,9 +465,10 @@ final class AppState {
             hud.showListening()
 
             let engine = engine, locale = speechLocale, vocabulary = VocabularyFile.load()
+            let whisperLanguage = self.whisperLanguage.isEmpty ? Self.systemWhisperLanguage : self.whisperLanguage
             let sessionTask = Task {
-                try await TranscriptionSession.start(
-                    locale: locale, engine: engine, vocabulary: vocabulary,
+                try await Dictation.start(
+                    engine: engine, locale: locale, whisperLanguage: whisperLanguage, vocabulary: vocabulary,
                     onPartial: { text in
                         Task { @MainActor in
                             AppState.shared.partialText = text
@@ -294,7 +482,7 @@ final class AppState {
                 var frames = 0
                 var peak: Float = 0
                 var rate = 0.0
-                var session: TranscriptionSession?
+                var session: (any DictationSession)?
                 var sessionError: Error?
                 do { session = try await sessionTask.value } catch { sessionError = error }
 
@@ -319,6 +507,11 @@ final class AppState {
         }
     }
 
+    /// The system language as a Whisper code ("en"), used when no Whisper language is chosen.
+    private static var systemWhisperLanguage: String? {
+        Locale.current.language.languageCode?.identifier
+    }
+
     private func endRecording() {
         guard isListening else { return }
         audio.stop()
@@ -327,7 +520,7 @@ final class AppState {
         hud.showWorking("Transcribing…")
     }
 
-    private func finishUtterance(session: TranscriptionSession?, error: Error?, summary: String) async {
+    private func finishUtterance(session: (any DictationSession)?, error: Error?, summary: String) async {
         lastRecording = summary
         guard let session else {
             statusNote = "Speech recognition failed to start: \(error.map { "\($0)" } ?? "unknown")"
@@ -357,7 +550,8 @@ final class AppState {
             let transcribeTime = heardAt.timeIntervalSince(releasedAt)
             if result.stage != .rewrite {
                 statusNote = "Rewrite fell back to \(result.stage.label): \(result.failure ?? "unknown reason")"
-                log.error("rewrite fallback: \(result.failure ?? "?", privacy: .public)")
+                // The failure text can quote words from the transcript, so it goes to the UI only, never the log.
+                log.error("rewrite fell back to \(result.stage.rawValue, privacy: .public)")
             }
 
             // Type it into the app that had focus when recording started.

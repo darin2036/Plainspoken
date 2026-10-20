@@ -11,9 +11,14 @@ let package = Package(
         .executable(name: "harness", targets: ["Harness"]),
         .executable(name: "Plainspoken", targets: ["PlainspokenApp"]),
     ],
+    dependencies: [
+        // Optional Whisper engine. The package is only code; the models download on demand.
+        .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.1.1"),
+    ],
     targets: [
         .target(
             name: "PlainspokenCore",
+            dependencies: [.product(name: "WhisperKit", package: "argmax-oss-swift")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(

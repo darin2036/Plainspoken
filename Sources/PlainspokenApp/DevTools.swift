@@ -23,6 +23,7 @@ func renderSettings(to dir: String) {
     snapshot(GeneralSettingsTab(state: state), as: "settings-general")
     snapshot(AppearanceSettingsTab(state: state), as: "settings-appearance")
     snapshot(DictationSettingsTab(state: state), as: "settings-dictation")
+    snapshot(HelpMeChooseSheet(state: state, isPresented: .constant(true)), as: "help-me-choose")
 }
 
 /// Dev hook behind `--insert-test`.

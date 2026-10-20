@@ -15,15 +15,70 @@ public struct Transcript: Sendable {
     public var segments: [TranscriptSegment]
 }
 
-/// Apple ships two on-device engines. SpeechTranscriber is the newer, faster one;
-/// DictationTranscriber is the classic dictation model with a punctuation switch.
+/// Two on-device engines ship with macOS: SpeechTranscriber is the newer, faster one, and
+/// DictationTranscriber is the classic dictation model with a punctuation switch. Whisper is an
+/// optional extra that downloads its model only after the user agrees to it.
 public enum SpeechEngine: String, CaseIterable, Identifiable, Sendable {
-    case speechTranscriber, dictationTranscriber
+    case speechTranscriber, dictationTranscriber, whisper
     public var id: String { rawValue }
     public var label: String {
         switch self {
-        case .speechTranscriber: return "SpeechTranscriber (newer)"
-        case .dictationTranscriber: return "DictationTranscriber (classic)"
+        case .speechTranscriber: return "Apple SpeechTranscriber (newer)"
+        case .dictationTranscriber: return "Apple DictationTranscriber (classic)"
+        case .whisper: return "Whisper (optional download)"
+        }
+    }
+
+    public var bestFor: String {
+        switch self {
+        case .speechTranscriber: return "Most people. Fast, light, and a good default."
+        case .dictationTranscriber: return "When SpeechTranscriber mishears you and you want a second opinion."
+        case .whisper: return "Accents or vocabulary the Apple engines keep getting wrong."
+        }
+    }
+
+    public var benefit: String {
+        switch self {
+        case .speechTranscriber: return "Built into macOS, so no download beyond a small language model. Shows words as you speak."
+        case .dictationTranscriber: return "Built into macOS, with punctuation as you speak. Handles some voices differently, so try it."
+        case .whisper: return "Trained on a huge range of accents and languages, so it is often the most forgiving of how you speak."
+        }
+    }
+
+    public var tradeoff: String {
+        switch self {
+        case .speechTranscriber: return "Can struggle with accents and some speech patterns (fast, mumbled or non-native speech), because it uses one model per region."
+        case .dictationTranscriber: return "Slightly older model, and shares the same difficulty with accents and some speech patterns."
+        case .whisper: return "A one-time download of 150 to 650 MB, more memory, and text appears only after you release the key."
+        }
+    }
+
+    /// The Apple engine whose model APIs apply. Whisper never goes through them.
+    var apple: SpeechEngine { self == .whisper ? .speechTranscriber : self }
+}
+
+/// One push-to-talk utterance: feed it microphone buffers, then call finish() for the transcript.
+public protocol DictationSession: AnyObject, Sendable {
+    func feed(_ buffer: AVAudioPCMBuffer)
+    func finish() async throws -> Transcript
+    func cancel() async
+}
+
+public enum Dictation {
+    /// Starts a session on whichever engine is selected. `whisperLanguage` is a Whisper language
+    /// code such as "en"; nil lets Whisper detect it.
+    public static func start(
+        engine: SpeechEngine,
+        locale: Locale = .current,
+        whisperLanguage: String? = nil,
+        vocabulary: [String] = [],
+        onPartial: @escaping @Sendable (String) -> Void = { _ in }
+    ) async throws -> any DictationSession {
+        switch engine {
+        case .whisper:
+            return WhisperSession(language: whisperLanguage, vocabulary: Vocabulary.terms(from: vocabulary))
+        case .speechTranscriber, .dictationTranscriber:
+            return try await TranscriptionSession.start(locale: locale, engine: engine, vocabulary: vocabulary, onPartial: onPartial)
         }
     }
 }
@@ -45,8 +100,8 @@ public enum TranscriberError: Error, CustomStringConvertible {
 /// Builds the speech module for an engine. Dictation is configured by hand rather than with a
 /// preset so it can report volatile (partial) results with punctuation.
 private func makeModule(_ engine: SpeechEngine, locale: Locale) -> any SpeechModule {
-    switch engine {
-    case .speechTranscriber:
+    switch engine.apple {
+    case .speechTranscriber, .whisper:
         return SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)
     case .dictationTranscriber:
         return DictationTranscriber(
@@ -60,8 +115,8 @@ private func makeModule(_ engine: SpeechEngine, locale: Locale) -> any SpeechMod
 }
 
 private func supportedLocale(for engine: SpeechEngine, equivalentTo locale: Locale) async -> Locale? {
-    switch engine {
-    case .speechTranscriber: return await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+    switch engine.apple {
+    case .speechTranscriber, .whisper: return await SpeechTranscriber.supportedLocale(equivalentTo: locale)
     case .dictationTranscriber: return await DictationTranscriber.supportedLocale(equivalentTo: locale)
     }
 }
@@ -69,6 +124,17 @@ private func supportedLocale(for engine: SpeechEngine, equivalentTo locale: Loca
 // MARK: - Assets
 
 public enum SpeechAssets {
+    /// Locales the engine can recognize, sorted by identifier. Regional variants (en_GB, en_AU,
+    /// en_IN...) are separate models, so picking the one that matches the speaker can help with accents.
+    public static func supportedLocales(for engine: SpeechEngine) async -> [Locale] {
+        let locales: [Locale]
+        switch engine.apple {
+        case .speechTranscriber, .whisper: locales = await SpeechTranscriber.supportedLocales
+        case .dictationTranscriber: locales = await DictationTranscriber.supportedLocales
+        }
+        return locales.sorted { $0.identifier < $1.identifier }
+    }
+
     /// Makes sure the on-device model for `locale` is installed and reserved for this app.
     /// Downloads on first run only; `progress` reports 0...1 while downloading.
     /// Returns the locale the model actually uses (e.g. en_CA maps to en_US).
@@ -103,7 +169,7 @@ public enum SpeechAssets {
 // MARK: - Live session
 
 /// One push-to-talk utterance: feed it microphone buffers, then call finish() for the transcript.
-public final class TranscriptionSession: @unchecked Sendable {
+public final class TranscriptionSession: DictationSession, @unchecked Sendable {
     private let analyzer: SpeechAnalyzer
     private let inputContinuation: AsyncStream<AnalyzerInput>.Continuation
     private let format: AVAudioFormat
@@ -141,8 +207,8 @@ public final class TranscriptionSession: @unchecked Sendable {
 
         let session = TranscriptionSession(analyzer: analyzer, continuation: continuation, format: format, onPartial: onPartial)
         session.resultsTask = Task { [session] in
-            switch engine {
-            case .speechTranscriber:
+            switch engine.apple {
+            case .speechTranscriber, .whisper:
                 let t = module as! SpeechTranscriber
                 for try await r in t.results { session.handle(String(r.text.characters), r.range, r.isFinal) }
             case .dictationTranscriber:

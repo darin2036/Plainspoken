@@ -118,6 +118,35 @@ enum Prefs {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "speechEngine") }
     }
 
+    static var whisperModel: WhisperModel {
+        get { WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? .balanced }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "whisperModel") }
+    }
+
+    /// Whisper language code (e.g. "en"); empty means "match the system language".
+    static var whisperLanguage: String {
+        get { UserDefaults.standard.string(forKey: "whisperLanguage") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "whisperLanguage") }
+    }
+
+    /// Identifier of the chosen recognition locale (e.g. "en_AU"); empty means "follow the system".
+    static var localeID: String {
+        get { UserDefaults.standard.string(forKey: "speechLocale") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "speechLocale") }
+    }
+
+    /// Check GitHub for a newer release about once a day. On by default; the one standing network
+    /// request the app makes, so it has its own switch.
+    static var autoCheckUpdates: Bool {
+        get { UserDefaults.standard.object(forKey: "autoCheckUpdates") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "autoCheckUpdates") }
+    }
+
+    static var lastUpdateCheck: Date {
+        get { UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast }
+        set { UserDefaults.standard.set(newValue, forKey: "lastUpdateCheck") }
+    }
+
     /// Older versions kept the vocabulary in preferences. Move it into the vocabulary file once.
     static func migrateVocabularyToFile() {
         let old = UserDefaults.standard.stringArray(forKey: "vocabulary") ?? []

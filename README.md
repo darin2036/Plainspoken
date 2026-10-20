@@ -8,6 +8,8 @@ Hold a key, talk the way you think, let go. Plainspoken types what you meant int
 
 Push-to-talk dictation for macOS, with the rewrite done by **Apple's on-device Foundation Models** (Apple Intelligence).
 
+**Local by design.** Everything runs on your Mac. No cloud services, no accounts, no tracking. What you say and write stays with you. [Details](#privacy-and-control)
+
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black)
 ![Apple silicon](https://img.shields.io/badge/Apple%20silicon-required-lightgrey)
@@ -15,7 +17,7 @@ Push-to-talk dictation for macOS, with the rewrite done by **Apple's on-device F
 ![Swift 6.2](https://img.shields.io/badge/Swift-6.2-orange)
 ![Status: early](https://img.shields.io/badge/status-early-yellow)
 
-[Features](#features) · [Install](#install) · [Usage](#usage) · [How it works](#how-it-works) · [Privacy](#privacy) · [Contributing](#contributing)
+[Features](#features) · [Install](#install) · [Usage](#usage) · [How it works](#how-it-works) · [Privacy](#privacy-and-control) · [Contributing](#contributing)
 
 </div>
 
@@ -23,7 +25,7 @@ Push-to-talk dictation for macOS, with the rewrite done by **Apple's on-device F
 
 Ordinary dictation writes down everything you say: the false starts, the "um, actually, no", the three attempts at the same sentence. You end up editing more than you saved.
 
-Plainspoken is a free, open source menu bar app for macOS that fixes that. It listens while you hold a key, then types the version of the text you would have written if you'd composed it carefully, in your own words. The cleanup is done by Apple's Foundation Models, the on-device language model behind Apple Intelligence, and the speech recognition is Apple's on-device speech framework. Plainspoken ships no model of its own and calls no cloud service: no servers, accounts, API keys or third-party dependencies.
+Plainspoken is a free, open source menu bar app for macOS that fixes that. It listens while you hold a key, then types the version of the text you would have written if you'd composed it carefully, in your own words. The cleanup is done by Apple's Foundation Models, the on-device language model behind Apple Intelligence, and the speech recognition is Apple's on-device speech framework. Plainspoken ships no model of its own and calls no cloud service: no servers, accounts or API keys. The one optional extra is [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift), an open source package that runs OpenAI's Whisper locally; its model is downloaded only if you choose Whisper in Settings and agree to the prompt.
 
 ```
 you say:   "let's meet Tuesday no wait Thursday afternoon and send the notes to Priya
@@ -47,7 +49,8 @@ it types:  "Let's meet Thursday afternoon and send the notes to the whole team."
 - **Push-to-talk anywhere.** Hold a key, talk, release. Text lands in whatever app and field has focus.
 - **Rewrites for intent.** Keeps only the final version of a self-correction, drops "scratch that" and "let me rephrase", merges repetition, formats spoken lists, and keeps your own voice.
 - **Never answers you.** Dictate a question and you get the question back. Dictate a command and you get the command written out, not carried out.
-- **Fully on-device.** Apple's speech recognition and Foundation Models. Nothing leaves your Mac.
+- **Local, private and in your control.** Speech recognition and the rewrite both run on your Mac. Your voice and text are never sent anywhere, and nothing is saved to disk. See [Privacy and control](#privacy-and-control).
+- **Optional Whisper for accents.** Off by default. Pick Whisper in Settings > Dictation and the app explains the one-time download (about 150 to 650 MB depending on the size) before fetching it. Settings also has a plain-language guide to which engine and size suits you, and you can remove the download at any time.
 - **Always gives you something.** If the rewrite is unavailable or looks wrong, it falls back to light cleanup, then to the raw transcript.
 - **Careful with your clipboard.** Typing goes through Accessibility when it can. When it has to paste, your clipboard is saved and restored.
 - **A bar you can see.** A small pill at the bottom of the screen shows the app is alive, then turns into a live waveform while you talk. Choose a green oscilloscope or a pixelated Fire visualizer.
@@ -96,11 +99,15 @@ With no identity it falls back to an ad-hoc signature, and macOS forgets the per
 
 ### Updating and uninstalling
 
-To update, pull and rebuild with the same signing identity, so your permissions carry over:
+Plainspoken tells you in Settings and in the menu when a newer release is published on GitHub. To update, pull and rebuild with the same signing identity, so your permissions carry over:
 
 ```bash
 git pull && scripts/build-app.sh
 ```
+
+Settings > General > Updates shows which build you're running, such as `0.1.0 (build 12, a1b2c3d)`: the release version, the commit count and the git commit (`-dirty` if built with uncommitted changes).
+
+**For maintainers:** the release version lives in `CFBundleShortVersionString` in `App/Info.plist`. To announce a new one, raise that number, commit, then publish a GitHub release tagged `v` plus the version (for example `v0.1.1`). The in-app update check compares against the latest published release.
 
 To uninstall, quit the app and delete it, then optionally remove its data and permissions:
 
@@ -168,9 +175,19 @@ release   ->  Apple Foundation Models rewrite  ->  type into the focused app
 - **Typing it in** first tries the Accessibility API, which doesn't touch your clipboard. If a text box won't take that, it pastes with Cmd+V and restores your clipboard afterwards. If it can't find a text box at all, it pastes anyway and leaves the text on your clipboard (a setting turns the paste off). If you switch apps while it's working, it types nothing and puts the text on the clipboard instead. It refuses password fields.
 - **Long monologues** are split on sentence boundaries and rewritten piece by piece.
 
-## Privacy
+## Privacy and control
 
-Audio and text never leave your Mac. There is no telemetry, no analytics and no account. The only network use is a one-time download of Apple's speech model the first time you run it, which the system fetches, not the app. After that it works offline.
+Plainspoken is designed to run entirely on your Mac, with your privacy and your control as the point rather than a side effect.
+
+- **No cloud services.** Speech recognition and the rewrite both run on-device. There is no server to send anything to, no account to create and no API key to paste in.
+- **Your voice and words are ephemeral.** Audio and transcripts exist in memory only while they are being processed, and the last result is kept in memory for the menu until your next dictation or until you quit. Plainspoken doesn't save recordings or transcripts to disk, and it doesn't write them to logs: its logs hold only timings and error types, never what you said or wrote. The only things it stores are your preferences, your vocabulary file and any model you choose to download.
+  - One thing outside the app's hands: when text can't be typed directly, it's pasted or left on your clipboard, and what happens to the clipboard after that is up to macOS and any clipboard manager you use.
+- **No tracking.** No telemetry, analytics or crash reporting.
+- **Works offline, and enforces it.** Once the models are on your Mac, dictation needs no internet connection. Plainspoken blocks its own web requests at all times except while a download you approved is running, so even a bug or a misbehaving dependency couldn't send anything out during dictation. A blocked attempt fails and is logged by host name only.
+- **Online only for two things, both visible and switchable.** Plainspoken blocks its own web requests at all other times.
+  - *Speech models.* Apple's are downloaded by macOS itself, the first time you use them. Whisper is off by default. Only if you choose it in Settings and confirm the prompt (which states the size) does Plainspoken download the model from [Hugging Face](https://huggingface.co/argmaxinc/whisperkit-coreml). That includes a small tokenizer file and a check for the model's current version, all from the same site. Hugging Face can see your IP address and which files you asked for, never anything you say or write. Once the download finishes, the app is offline again.
+  - *Update check.* About once a day the app asks GitHub whether a newer release exists, by requesting this project's latest release. The request carries nothing about you or your Mac, not even your version, and GitHub sees only your IP address. If there's a newer one, Settings and the menu show it and a button opens the release page; Plainspoken never downloads or installs anything by itself. You can turn the daily check off in Settings > General, and then it only happens when you press Check for Updates.
+- **You stay in control.** Downloaded Whisper models can be removed in Settings at any time. The code is open source, so you can check all of this.
 
 ## Troubleshooting
 
