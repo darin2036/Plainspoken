@@ -99,11 +99,15 @@ With no identity it falls back to an ad-hoc signature, and macOS forgets the per
 
 ### Updating and uninstalling
 
-To update, pull and rebuild with the same signing identity, so your permissions carry over:
+Plainspoken tells you in Settings and in the menu when a newer release is published on GitHub. To update, pull and rebuild with the same signing identity, so your permissions carry over:
 
 ```bash
 git pull && scripts/build-app.sh
 ```
+
+Settings > General > Updates shows which build you're running, such as `0.1.0 (build 12, a1b2c3d)`: the release version, the commit count and the git commit (`-dirty` if built with uncommitted changes).
+
+**For maintainers:** the release version lives in `CFBundleShortVersionString` in `App/Info.plist`. To announce a new one, raise that number, commit, then publish a GitHub release tagged `v` plus the version (for example `v0.1.1`). The in-app update check compares against the latest published release.
 
 To uninstall, quit the app and delete it, then optionally remove its data and permissions:
 
@@ -180,9 +184,9 @@ Plainspoken is designed to run entirely on your Mac, with your privacy and your 
   - One thing outside the app's hands: when text can't be typed directly, it's pasted or left on your clipboard, and what happens to the clipboard after that is up to macOS and any clipboard manager you use.
 - **No tracking.** No telemetry, analytics or crash reporting.
 - **Works offline, and enforces it.** Once the models are on your Mac, dictation needs no internet connection. Plainspoken blocks its own web requests at all times except while a download you approved is running, so even a bug or a misbehaving dependency couldn't send anything out during dictation. A blocked attempt fails and is logged by host name only.
-- **You decide what is downloaded.** The app goes online only to fetch a speech model, and only in these cases:
-  - Apple's speech and language models are downloaded by macOS itself, the first time you use them.
-  - Whisper is off by default. Only if you choose it in Settings and confirm the prompt (which states the size) does Plainspoken download the model from [Hugging Face](https://huggingface.co/argmaxinc/whisperkit-coreml). That includes a small tokenizer file and a check for the model's current version, all from the same site. Hugging Face can see your IP address and which files you asked for, never anything you say or write. Once the download finishes, the app is offline again.
+- **Online only for two things, both visible and switchable.** Plainspoken blocks its own web requests at all other times.
+  - *Speech models.* Apple's are downloaded by macOS itself, the first time you use them. Whisper is off by default. Only if you choose it in Settings and confirm the prompt (which states the size) does Plainspoken download the model from [Hugging Face](https://huggingface.co/argmaxinc/whisperkit-coreml). That includes a small tokenizer file and a check for the model's current version, all from the same site. Hugging Face can see your IP address and which files you asked for, never anything you say or write. Once the download finishes, the app is offline again.
+  - *Update check.* About once a day the app asks GitHub whether a newer release exists, by requesting this project's latest release. The request carries nothing about you or your Mac, not even your version, and GitHub sees only your IP address. If there's a newer one, Settings and the menu show it and a button opens the release page; Plainspoken never downloads or installs anything by itself. You can turn the daily check off in Settings > General, and then it only happens when you press Check for Updates.
 - **You stay in control.** Downloaded Whisper models can be removed in Settings at any time. The code is open source, so you can check all of this.
 
 ## Troubleshooting

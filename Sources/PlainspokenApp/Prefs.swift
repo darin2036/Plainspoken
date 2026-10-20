@@ -100,6 +100,18 @@ enum Prefs {
         set { UserDefaults.standard.set(newValue, forKey: "speechLocale") }
     }
 
+    /// Check GitHub for a newer release about once a day. On by default; the one standing network
+    /// request the app makes, so it has its own switch.
+    static var autoCheckUpdates: Bool {
+        get { UserDefaults.standard.object(forKey: "autoCheckUpdates") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "autoCheckUpdates") }
+    }
+
+    static var lastUpdateCheck: Date {
+        get { UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast }
+        set { UserDefaults.standard.set(newValue, forKey: "lastUpdateCheck") }
+    }
+
     /// Older versions kept the vocabulary in preferences. Move it into the vocabulary file once.
     static func migrateVocabularyToFile() {
         let old = UserDefaults.standard.stringArray(forKey: "vocabulary") ?? []

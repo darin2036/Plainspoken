@@ -40,6 +40,16 @@ while !argv.isEmpty {
         engine = name.hasPrefix("w") ? .whisper : name.hasPrefix("d") ? .dictationTranscriber : .speechTranscriber
     case "--whisper-model": whisperModel = WhisperModel(rawValue: argv.removeFirst()) ?? whisperModel
     case "--rewrite": rewriteTranscript = true
+    case "--check-update":
+        // --check-update <current version> [owner/repo]
+        let current = argv.removeFirst()
+        let repo = argv.first.flatMap { $0.hasPrefix("-") ? nil : $0 } ?? UpdateChecker.repo
+        for (a, b) in [("0.2.0", "0.1.9"), ("v1.0.0", "0.9.9"), ("0.1.0", "0.1.0"), ("0.1.1", "0.1.10"), ("1.2", "1.2.0"), ("2.0.0-beta.1", "1.9.0")] {
+            print("isNewer(\(a), than: \(b)) = \(UpdateChecker.isNewer(a, than: b))")
+        }
+        do { print("live check (\(repo)) from \(current): \(try await UpdateChecker.check(current: current, repo: repo))") }
+        catch { print("live check failed: \(error)") }
+        exit(0)
     case "--probe-network":
         // Proves the guard: a request outside a download window must fail.
         do {

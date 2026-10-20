@@ -7,6 +7,15 @@ import PlainspokenCore
 
 private let log = Logger(subsystem: "io.github.darin2036.Plainspoken", category: "app")
 
+enum UpdateStatus: Equatable {
+    case idle
+    case checking
+    case upToDate
+    case noReleases
+    case available(AvailableUpdate)
+    case failed
+}
+
 enum SpeechModelState: Equatable {
     case preparing(Double?)  // download fraction, nil while just checking
     case ready
@@ -102,6 +111,56 @@ final class AppState {
     /// Bumped when a model is downloaded or removed so settings re-reads what is installed.
     private(set) var whisperStoreVersion = 0
 
+    private(set) var updateStatus = UpdateStatus.idle
+
+    var autoCheckUpdates: Bool = Prefs.autoCheckUpdates {
+        didSet { Prefs.autoCheckUpdates = autoCheckUpdates }
+    }
+
+    /// The running version, from the app bundle. Nil when run outside a bundle (swift run).
+    var currentVersion: String? {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    }
+
+    /// "0.1.0 (build 12, a1b2c3d)" for display. Build and commit are stamped by scripts/build-app.sh.
+    var versionDescription: String {
+        guard let version = currentVersion else { return "development build" }
+        let info = Bundle.main.infoDictionary
+        var details: [String] = []
+        if let build = info?["CFBundleVersion"] as? String { details.append("build \(build)") }
+        if let commit = info?["PlainspokenCommit"] as? String { details.append(commit) }
+        return details.isEmpty ? version : "\(version) (\(details.joined(separator: ", ")))"
+    }
+
+    /// Asks GitHub for the latest release. `automatic` checks run quietly at most once a day and
+    /// say nothing on failure; a manual check always reports what happened.
+    func checkForUpdates(automatic: Bool = false) {
+        guard let current = currentVersion else { return }
+        if automatic {
+            guard autoCheckUpdates, Date().timeIntervalSince(Prefs.lastUpdateCheck) > 24 * 3600 else { return }
+        }
+        if case .checking = updateStatus { return }
+        updateStatus = .checking
+        Task { [weak self] in
+            do {
+                let result = try await UpdateChecker.check(current: current)
+                Prefs.lastUpdateCheck = Date()
+                switch result {
+                case .upToDate: self?.updateStatus = .upToDate
+                case .noReleases: self?.updateStatus = .noReleases
+                case .available(let update): self?.updateStatus = .available(update)
+                }
+            } catch {
+                log.error("update check failed: \(String(describing: error), privacy: .public)")
+                self?.updateStatus = automatic ? .idle : .failed
+            }
+        }
+    }
+
+    func openUpdatePage(_ update: AvailableUpdate) {
+        NSWorkspace.shared.open(update.url)
+    }
+
     /// Recognition locale identifier; empty follows the system locale.
     var localeID: String = Prefs.localeID {
         didSet {
@@ -142,6 +201,7 @@ final class AppState {
         monitor.onRelease = { [weak self] in MainActor.assumeIsolated { self?.endRecording() } }
 
         Prefs.migrateVocabularyToFile()
+        checkForUpdates(automatic: true)
         refresh()
         hud.setIdleEnabled(showIdleIndicator)
         // Microphones come and go (headphones connect, USB mics get plugged in).

@@ -58,6 +58,16 @@ struct MenuView: View {
 
             SpeechModelRow(model: state.speechModel)
 
+            if case .available(let update) = state.updateStatus {
+                Button {
+                    state.openUpdatePage(update)
+                } label: {
+                    Label("Version \(update.version) is available", systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.link)
+                .font(.callout)
+            }
+
             Label(state.activeMicName, systemImage: "mic")
                 .font(.caption).foregroundStyle(.secondary)
 
@@ -207,6 +217,17 @@ struct SettingsHeader: View {
 struct GeneralSettingsTab: View {
     @Bindable var state: AppState
 
+    private var updateMessage: String {
+        switch state.updateStatus {
+        case .idle: return "Not checked yet"
+        case .checking: return "Checking…"
+        case .upToDate: return "You're up to date"
+        case .noReleases: return "No releases published yet"
+        case .available(let update): return "Version \(update.version) is available"
+        case .failed: return "Couldn't check. Are you online?"
+        }
+    }
+
     var body: some View {
         Form {
             Section {
@@ -216,7 +237,7 @@ struct GeneralSettingsTab: View {
                     Spacer()
                     InfoButton(
                         label: "privacy",
-                        info: "What you say and write never leaves your Mac. There are no cloud services, accounts, tracking or analytics. Transcripts are ephemeral: they are never saved or logged and exist only in memory while you use them. The app goes online only to download a speech model: Apple's, through macOS, or Whisper, and only if you choose it and confirm. At every other time the app blocks its own network access.")
+                        info: "What you say and write never leaves your Mac. There are no cloud services, accounts, tracking or analytics. Transcripts are ephemeral: they are never saved or logged and exist only in memory while you use them. The app goes online only for two things: downloading a speech model (Apple's, through macOS, or Whisper, and only if you choose it and confirm), and a daily check for a newer release on GitHub, which you can turn off under Updates. At every other time the app blocks its own network access.")
                 }
             } header: {
                 Text("Privacy")
@@ -246,6 +267,26 @@ struct GeneralSettingsTab: View {
                 Toggle("Paste when no text box is detected", isOn: $state.pasteWhenNoTextBox)
             } header: {
                 SettingsHeader("Typing", info: "On: Plainspoken pastes even if it can't see a text box, and leaves the text on your clipboard in case it didn't land. Off: it only copies the text to your clipboard.")
+            }
+
+            Section {
+                LabeledContent("Version") {
+                    Text(state.versionDescription).textSelection(.enabled)
+                }
+                HStack {
+                    Text(updateMessage)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if case .available(let update) = state.updateStatus {
+                        Button("View Release") { state.openUpdatePage(update) }
+                    } else {
+                        Button("Check for Updates") { state.checkForUpdates() }
+                            .disabled(state.updateStatus == .checking || state.currentVersion == nil)
+                    }
+                }
+                Toggle("Check automatically", isOn: $state.autoCheckUpdates)
+            } header: {
+                SettingsHeader("Updates", info: "Plainspoken can ask GitHub whether a newer release exists, about once a day. It's a plain request for the project's latest release and sends nothing about you or your Mac; GitHub sees only your IP address. When one is found, View Release opens its page on GitHub and you decide what to do. Turn automatic checks off and nothing is contacted unless you press Check for Updates.")
             }
         }
         .settingsTabStyle()

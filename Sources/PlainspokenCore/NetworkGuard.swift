@@ -1,7 +1,7 @@
 import Foundation
 
-/// Blocks every HTTP(S) request the app makes itself, except while a download the user approved is
-/// running. This is what makes "nothing leaves your Mac once a model is installed" enforced in
+/// Blocks every HTTP(S) request the app makes itself, except while a download the user approved or
+/// the update check (which has its own setting) is running. This is what makes "nothing leaves your Mac once a model is installed" enforced in
 /// code instead of relying on third-party packages to behave: if any dependency tried to phone
 /// home during dictation, the request would fail here (and show up in the log as a blocked URL).
 ///
@@ -16,7 +16,8 @@ public final class NetworkGuard: URLProtocol {
         URLProtocol.registerClass(NetworkGuard.self)
     }
 
-    /// Runs `body` with network access allowed. Use only for a download the user has confirmed.
+    /// Runs `body` with network access allowed. Use only for a download the user has confirmed or the
+    /// update check.
     public static func allowing<T>(_ body: () async throws -> T) async rethrows -> T {
         change(+1)
         defer { change(-1) }

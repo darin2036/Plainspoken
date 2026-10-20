@@ -21,6 +21,15 @@ mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/Plainspoken"
 cp App/Info.plist "$APP/Contents/Info.plist"
 
+# Stamp the build so Settings can show exactly what is running: the build number is the commit
+# count, and a "-dirty" suffix marks uncommitted changes. The release version stays in App/Info.plist.
+PLIST="$APP/Contents/Info.plist"
+BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if ! git diff --quiet HEAD 2>/dev/null; then COMMIT="$COMMIT-dirty"; fi
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$PLIST"
+/usr/libexec/PlistBuddy -c "Add :PlainspokenCommit string $COMMIT" "$PLIST"
+
 IDENTITY="${CODESIGN_IDENTITY:-}"
 if [ -z "$IDENTITY" ]; then
     IDENTITY="$(security find-identity -v -p codesigning | sed -n 's/.*"\(.*\)".*/\1/p' | head -1)"
