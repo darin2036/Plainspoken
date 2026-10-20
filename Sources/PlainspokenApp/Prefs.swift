@@ -83,6 +83,12 @@ enum Prefs {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "speechEngine") }
     }
 
+    /// Identifier of the chosen recognition locale (e.g. "en_AU"); empty means "follow the system".
+    static var localeID: String {
+        get { UserDefaults.standard.string(forKey: "speechLocale") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "speechLocale") }
+    }
+
     /// Older versions kept the vocabulary in preferences. Move it into the vocabulary file once.
     static func migrateVocabularyToFile() {
         let old = UserDefaults.standard.stringArray(forKey: "vocabulary") ?? []

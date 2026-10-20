@@ -69,6 +69,17 @@ private func supportedLocale(for engine: SpeechEngine, equivalentTo locale: Loca
 // MARK: - Assets
 
 public enum SpeechAssets {
+    /// Locales the engine can recognize, sorted by identifier. Regional variants (en_GB, en_AU,
+    /// en_IN...) are separate models, so picking the one that matches the speaker can help with accents.
+    public static func supportedLocales(for engine: SpeechEngine) async -> [Locale] {
+        let locales: [Locale]
+        switch engine {
+        case .speechTranscriber: locales = await SpeechTranscriber.supportedLocales
+        case .dictationTranscriber: locales = await DictationTranscriber.supportedLocales
+        }
+        return locales.sorted { $0.identifier < $1.identifier }
+    }
+
     /// Makes sure the on-device model for `locale` is installed and reserved for this app.
     /// Downloads on first run only; `progress` reports 0...1 while downloading.
     /// Returns the locale the model actually uses (e.g. en_CA maps to en_US).

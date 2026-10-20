@@ -80,6 +80,14 @@ final class AppState {
         }
     }
 
+    /// Recognition locale identifier; empty follows the system locale.
+    var localeID: String = Prefs.localeID {
+        didSet {
+            Prefs.localeID = localeID
+            prepareSpeechModel()
+        }
+    }
+
     /// How many entries the vocabulary file currently holds (the file is the source of truth).
     private(set) var vocabularyCount = 0
 
@@ -226,9 +234,10 @@ final class AppState {
         prepareTask?.cancel()
         speechModel = .preparing(nil)
         let engine = engine
+        let requested = localeID.isEmpty ? Locale.current : Locale(identifier: localeID)
         prepareTask = Task { [weak self] in
             do {
-                let locale = try await SpeechAssets.prepare(engine: engine) { fraction in
+                let locale = try await SpeechAssets.prepare(locale: requested, engine: engine) { fraction in
                     Task { @MainActor in
                         if case .preparing = self?.speechModel { self?.speechModel = .preparing(fraction) }
                     }

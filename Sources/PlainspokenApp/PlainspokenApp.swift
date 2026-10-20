@@ -230,6 +230,7 @@ struct AppearanceSettingsTab: View {
 
 struct DictationSettingsTab: View {
     @Bindable var state: AppState
+    @State private var locales: [Locale] = []
 
     var body: some View {
         Form {
@@ -237,10 +238,24 @@ struct DictationSettingsTab: View {
                 Picker("Engine", selection: $state.engine) {
                     ForEach(SpeechEngine.allCases) { Text($0.label).tag($0) }
                 }
+                Picker("Language & accent", selection: $state.localeID) {
+                    Text("Match system").tag("")
+                    ForEach(locales, id: \.identifier) { locale in
+                        Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                            .tag(locale.identifier)
+                    }
+                    // Keep a saved choice visible even if the list hasn't loaded or the engine lacks it.
+                    if !state.localeID.isEmpty, !locales.contains(where: { $0.identifier == state.localeID }) {
+                        Text(state.localeID).tag(state.localeID)
+                    }
+                }
             } header: {
                 Text("Speech recognition")
             } footer: {
-                Text("Both run on your Mac. Try each with your own voice.")
+                Text("Both engines run on your Mac. Regional variants such as English (Australia) or English (India) use separate models, so choose the one closest to how you speak. A new model downloads the first time you pick it.")
+            }
+            .task(id: state.engine) {
+                locales = await SpeechAssets.supportedLocales(for: state.engine)
             }
 
             Section {
