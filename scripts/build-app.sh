@@ -13,6 +13,25 @@ cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
 APP="build/Plainspoken.app"
 
+# The macOS 27 SDK declares SwiftUI's @State as a macro, and the plugin that expands it
+# (libSwiftUIMacros.dylib) ships only with Xcode. With just the Command Line Tools the build fails
+# with "plugin for module 'SwiftUIMacros' not found", so probe-compile a @State and, if that fails,
+# build against the macOS 26 SDK the Command Line Tools also install. An explicit SDKROOT wins.
+if [ -z "${SDKROOT:-}" ]; then
+    PROBE="$(mktemp -d)"
+    trap 'rm -rf "$PROBE"' EXIT
+    printf 'import SwiftUI\nstruct Probe: View { @State var x = 0; var body: some View { Text("") } }\n' > "$PROBE/Probe.swift"
+    if ! swiftc -typecheck -parse-as-library -target "$(uname -m)-apple-macos26.0" "$PROBE/Probe.swift" >/dev/null 2>&1; then
+        FALLBACK_SDK="$(xcode-select -p)/SDKs/MacOSX26.sdk"
+        if [ -d "$FALLBACK_SDK" ]; then
+            echo "note: SwiftUI macros unavailable with the default SDK; building against $FALLBACK_SDK" >&2
+            export SDKROOT="$FALLBACK_SDK"
+        else
+            echo "warning: SwiftUI macros unavailable and no macOS 26 SDK found; install Xcode" >&2
+        fi
+    fi
+fi
+
 swift build -c "$CONFIG" --product Plainspoken
 BIN="$(swift build -c "$CONFIG" --show-bin-path)/Plainspoken"
 
