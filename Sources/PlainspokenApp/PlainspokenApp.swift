@@ -35,6 +35,7 @@ struct PlainspokenApp: App {
 struct MenuView: View {
     @Bindable var state: AppState
     @Environment(\.openSettings) private var openSettings
+    @State private var showDetails = false
 
     /// Only what still needs the user: a missing permission, a model that isn't ready, an update.
     private var missingPermissions: [Permission] {
@@ -96,31 +97,9 @@ struct MenuView: View {
             Divider()
             quickPickers
 
-            // Breathing room between the pickers and the recent transcription below them.
             if hasRecentActivity {
-                Spacer().frame(height: 8)
-            }
-
-            if let note = state.statusNote {
-                Text(note).font(.caption).foregroundStyle(.red)
-            }
-            if !state.partialText.isEmpty {
-                Text(state.partialText).font(.callout).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if let transcript = state.lastTranscript {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(transcript).font(.callout).textSelection(.enabled)
-                    if let heard = state.lastHeard, heard != transcript {
-                        Text("Heard: \(heard)").font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                    }
-                    Button("Copy text") { state.copyLastTranscript() }.controlSize(.small)
-                }
-            }
-            if let timing = state.lastTiming {
-                Text(timing).font(.caption).foregroundStyle(.secondary)
-            }
-            if let last = state.lastRecording {
-                Text(last).font(.caption).foregroundStyle(.secondary)
+                Spacer().frame(height: 4)
+                recentActivity
             }
 
             Divider()
@@ -206,6 +185,64 @@ extension MenuView {
         }
     }
 
+    /// The last result, kept compact. Diagnostics (what was heard, timings) sit behind Details so the
+    /// menu stays short.
+    fileprivate var recentActivity: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let note = state.statusNote {
+                Label {
+                    Text(note).fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            if !state.partialText.isEmpty {
+                Text(state.partialText)
+                    .font(.callout).foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if let transcript = state.lastTranscript {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Last dictation").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Copy") { state.copyLastTranscript() }
+                            .buttonStyle(.link).font(.caption)
+                    }
+                    Text(transcript)
+                        .font(.callout).textSelection(.enabled)
+                        .lineLimit(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if hasDetails {
+                        DisclosureGroup("Details", isExpanded: $showDetails) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                if let heard = state.lastHeard, heard != transcript {
+                                    Text("Heard: \(heard)").lineLimit(4)
+                                }
+                                if let timing = state.lastTiming { Text(timing) }
+                                if let last = state.lastRecording { Text(last) }
+                            }
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 4)
+                        }
+                        .font(.caption)
+                    }
+                }
+                .padding(10)
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+    }
+
+    private var hasDetails: Bool {
+        state.lastHeard != nil || state.lastTiming != nil || state.lastRecording != nil
+    }
+
     fileprivate func choose(_ choice: ModelChoice) {
         state.select(choice)
         // A Whisper size that needs downloading asks first, and that prompt lives in Settings.
@@ -274,6 +311,7 @@ struct SettingsView: View {
                 .tag(SettingsTab.about)
         }
         .frame(width: 480)
+        .background(FixedWindowTitle("Plainspoken"))
         // Download prompts live here, not in a tab, so they show wherever the request came from
         // (the Dictation tab, the Help me choose sheet or the menu bar).
         .confirmationDialog(
@@ -343,6 +381,40 @@ struct SettingsHeader: View {
             InfoButton(label: title, info: info)
         }
     }
+}
+
+/// The Settings window titles itself after the selected tab ("General", "About"...). This pins the
+/// title to the app's name instead, putting it back whenever the system changes it.
+private struct FixedWindowTitle: NSViewRepresentable {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    final class TitleView: NSView {
+        var title = ""
+        private var observation: NSKeyValueObservation?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            apply(to: window)
+            observation = window.observe(\.title, options: [.new]) { [weak self] window, _ in
+                self?.apply(to: window)
+            }
+        }
+
+        private func apply(to window: NSWindow) {
+            if window.title != title { window.title = title }
+        }
+    }
+
+    func makeNSView(context: Context) -> TitleView {
+        let view = TitleView()
+        view.title = title
+        return view
+    }
+
+    func updateNSView(_ view: TitleView, context: Context) { view.title = title }
 }
 
 /// Each tab is a grouped form: a short control per row, with the explanation behind an info
