@@ -117,8 +117,11 @@ public enum WhisperStore {
     }
 
     /// Downloads the model if needed (progress is 0...1) and loads it, so the first dictation is quick.
+    /// `installing` fires once the download is done and the slow load (Core ML compile) begins, since
+    /// progress alone would sit at 1.0 through it.
     public static func prepare(_ model: WhisperModel, allowDownload: Bool,
-                               progress: @escaping @Sendable (Double) -> Void) async throws {
+                               progress: @escaping @Sendable (Double) -> Void,
+                               installing: @escaping @Sendable () -> Void = {}) async throws {
         if !isInstalled(model) {
             guard allowDownload else { throw WhisperSetupError.notInstalled }
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
@@ -130,6 +133,7 @@ public enum WhisperStore {
                 _ = try await WhisperKit.download(variant: model.variant, downloadBase: base, from: repo) { p in
                     progress(p.fractionCompleted)
                 }
+                installing()
                 try await WhisperRuntime.shared.load(model)
                 return revision
             }
