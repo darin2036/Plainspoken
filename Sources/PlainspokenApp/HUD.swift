@@ -18,6 +18,8 @@ final class HUDModel {
     var style = Prefs.visualizer
     /// False while setup is incomplete (permissions, speech model); the idle pill turns orange.
     var ready = false
+    /// Called when the pill is clicked: starts a dictation from the resting pill, stops one while listening.
+    @ObservationIgnored var onTap: (() -> Void)?
 }
 
 /// Floating pill at the bottom of the screen. Never takes focus, so the app you're typing
@@ -31,6 +33,9 @@ final class HUDController {
     private var idleTimer: Timer?
 
     private static let panelSize = NSSize(width: 340, height: 110)
+    /// While resting, the window hugs the pill so the transparent area around it doesn't swallow
+    /// clicks meant for the app underneath.
+    private static let idlePanelSize = NSSize(width: 90, height: 40)
 
     init(waveform: WaveformBuffer) {
         panel = HUDPanel(contentRect: NSRect(origin: .zero, size: Self.panelSize))
@@ -74,6 +79,7 @@ final class HUDController {
             guard !Task.isCancelled, let self else { return }
             if self.idleEnabled {
                 self.model.phase = .idle
+                self.present()
                 return
             }
             self.model.phase = .hidden
@@ -111,12 +117,16 @@ final class HUDController {
         // The screen under the pointer is almost always the one being worked on.
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens[0]
-        let size = Self.panelSize
+        let size = model.phase == .idle ? Self.idlePanelSize : Self.panelSize
         let frame = NSRect(
             x: screen.frame.midX - size.width / 2,
-            y: screen.visibleFrame.minY + 14,
+            y: screen.visibleFrame.minY + 14 - HUDView.shadowRoom,
             width: size.width, height: size.height
         )
+        // The pill takes clicks while resting (start) and while listening (stop). It never takes
+        // focus, so the app you're typing into stays frontmost either way.
+        let clickable = model.phase == .idle || model.phase == .listening
+        if panel.ignoresMouseEvents == clickable { panel.ignoresMouseEvents = !clickable }
         if panel.frame != frame { panel.setFrame(frame, display: false) }
         if !panel.isVisible { panel.orderFrontRegardless() }
     }
@@ -142,8 +152,15 @@ private final class HUDPanel: NSPanel {
 }
 
 struct HUDView: View {
+    /// Empty space kept under the pill inside the window. A window clips whatever is drawn
+    /// outside it, so without this the shadow is cut off in a flat line along the pill's base.
+    /// The window is placed this much lower so the pill itself doesn't move.
+    static let shadowRoom: CGFloat = 14
+
     let model: HUDModel
     let waveform: WaveformBuffer
+
+    @State private var hovering = false
 
     private var visible: Bool { model.phase != .hidden }
 
@@ -152,15 +169,32 @@ struct HUDView: View {
             Spacer(minLength: 0)
             ZStack(alignment: .bottom) {
                 if model.phase == .idle {
-                    idlePill.transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .bottom)))
+                    // Padding sits inside the click target so the pill is easy to hit.
+                    idlePill
+                        .scaleEffect(hovering ? 1.25 : 1, anchor: .bottom)
+                        .animation(.spring(duration: 0.2), value: hovering)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .padding(.bottom, Self.shadowRoom)
+                        .contentShape(Rectangle())
+                        .onHover { hovering = $0 }
+                        .onTapGesture { model.onTap?() }
+                        .accessibilityElement()
+                        .accessibilityLabel("Start dictation")
+                        .accessibilityAddTraits(.isButton)
+                        .transition(.opacity.combined(with: .scale(scale: 0.6, anchor: .bottom)))
                 } else {
-                    pill.transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .bottom)))
+                    pill
+                        .onTapGesture { if model.phase == .listening { model.onTap?() } }
+                        .accessibilityLabel(model.phase == .listening ? "Stop dictation" : "Dictation status")
+                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .bottom)))
                 }
             }
             .opacity(visible ? 1 : 0)
             .animation(.spring(duration: 0.3), value: model.phase == .idle)
             .animation(.spring(duration: 0.3), value: visible)
         }
+        .padding(.bottom, model.phase == .idle ? 0 : Self.shadowRoom)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -181,14 +215,16 @@ struct HUDView: View {
         }
     }
 
-    /// Tiny resting pill: proof the app is running. Orange while setup is unfinished.
+    /// Small resting pill: proof the app is running. Orange while setup is unfinished. Kept
+    /// solid, with a crisp full-point outline and a tight shadow, so it stays sharp on any
+    /// background instead of blurring into it like a thin translucent shape would.
     private var idlePill: some View {
-        Capsule()
-            .fill(.ultraThinMaterial)
-            .overlay(Capsule().fill((model.ready ? Color.white : Color.orange).opacity(model.ready ? 0.10 : 0.55)))
-            .overlay(Capsule().strokeBorder((model.ready ? Color.white : Color.orange).opacity(0.45), lineWidth: 0.75))
-            .frame(width: 38, height: 7)
-            .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
+        let tint = model.ready ? Color.white : Color.orange
+        return Capsule()
+            .fill(model.ready ? Color.black.opacity(0.62) : Color.orange.opacity(0.9))
+            .overlay(Capsule().strokeBorder(tint.opacity(model.ready ? 0.75 : 1), lineWidth: 1))
+            .frame(width: 46, height: 9)
+            .shadow(color: .black.opacity(0.3), radius: 3, y: 1.5)
     }
 
     private var pill: some View {

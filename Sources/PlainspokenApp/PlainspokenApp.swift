@@ -36,6 +36,28 @@ struct MenuView: View {
     @Bindable var state: AppState
     @Environment(\.openSettings) private var openSettings
 
+    /// Only what still needs the user: a missing permission, a model that isn't ready, an update.
+    private var missingPermissions: [Permission] {
+        state.requiredPermissions.filter { state.granted[$0] != true }
+    }
+
+    private var hasRecentActivity: Bool {
+        !state.partialText.isEmpty || state.lastTranscript != nil
+            || state.lastTiming != nil || state.lastRecording != nil || state.statusNote != nil
+    }
+
+    private var speechModelNeedsAttention: Bool { state.speechModel != .ready }
+
+    private var needsSetup: Bool {
+        !missingPermissions.isEmpty || speechModelNeedsAttention || !state.hotkeyActive
+    }
+
+    private func showSettings(_ tab: SettingsTab) {
+        state.settingsTab = tab
+        NSApp.activate()
+        openSettings()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Plainspoken").font(.headline)
@@ -44,32 +66,40 @@ struct MenuView: View {
                 Label("Listening…", systemImage: "waveform").foregroundStyle(.red)
             } else if state.isFinalizing {
                 Label("Finishing transcript…", systemImage: "ellipsis").foregroundStyle(.secondary)
-            } else if state.allGranted && state.hotkeyActive && state.speechModel == .ready {
-                Text("Hold \(state.hotkey.shortLabel) to talk").foregroundStyle(.secondary)
+            } else if needsSetup {
+                Text("Finish setup to start dictating").foregroundStyle(.orange)
             } else {
-                Text("Setup needed").foregroundStyle(.orange)
+                Text("Hold \(state.hotkey.shortLabel) to talk").foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(state.requiredPermissions) { p in
-                    PermissionRow(permission: p, granted: state.granted[p] == true)
+            // Action items. Nothing here when everything is in order.
+            if !missingPermissions.isEmpty || speechModelNeedsAttention || updateAvailable != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(missingPermissions) { p in
+                        PermissionRow(permission: p, granted: false)
+                    }
+                    if speechModelNeedsAttention {
+                        SpeechModelRow(model: state.speechModel)
+                    }
+                    if let update = updateAvailable {
+                        Button {
+                            state.openUpdatePage(update)
+                        } label: {
+                            Label("Version \(update.version) is available", systemImage: "arrow.down.circle.fill")
+                        }
+                        .buttonStyle(.link)
+                        .font(.callout)
+                    }
                 }
             }
 
-            SpeechModelRow(model: state.speechModel)
+            Divider()
+            quickPickers
 
-            if case .available(let update) = state.updateStatus {
-                Button {
-                    state.openUpdatePage(update)
-                } label: {
-                    Label("Version \(update.version) is available", systemImage: "arrow.down.circle.fill")
-                }
-                .buttonStyle(.link)
-                .font(.callout)
+            // Breathing room between the pickers and the recent transcription below them.
+            if hasRecentActivity {
+                Spacer().frame(height: 8)
             }
-
-            Label(state.activeMicName, systemImage: "mic")
-                .font(.caption).foregroundStyle(.secondary)
 
             if let note = state.statusNote {
                 Text(note).font(.caption).foregroundStyle(.red)
@@ -106,6 +136,80 @@ struct MenuView: View {
         }
         .padding(14)
         .frame(width: 290)
+        .background(ShadowRefresher())
+    }
+}
+
+/// The menu bar panel keeps its old window shadow when its content changes height while it is
+/// open (live transcript text, an update notice), which shows as a ghost edge under the panel.
+/// Recomputing the shadow after each layout pass clears it.
+private struct ShadowRefresher: NSViewRepresentable {
+    final class RefreshingView: NSView {
+        override func layout() {
+            super.layout()
+            DispatchQueue.main.async { [weak self] in self?.window?.invalidateShadow() }
+        }
+    }
+
+    func makeNSView(context: Context) -> RefreshingView { RefreshingView() }
+    func updateNSView(_ nsView: RefreshingView, context: Context) {}
+}
+
+extension MenuView {
+    fileprivate var updateAvailable: AvailableUpdate? {
+        if case .available(let update) = state.updateStatus { return update }
+        return nil
+    }
+
+    /// Microphone and speech model, switchable without opening Settings.
+    fileprivate var quickPickers: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            pickerRow("Mic", systemImage: "mic") {
+                Picker("Microphone", selection: $state.micUID) {
+                    Text("System default").tag("")
+                    ForEach(state.inputDevices) { Text($0.label).tag($0.id) }
+                    if !state.micUID.isEmpty, !state.inputDevices.contains(where: { $0.id == state.micUID }) {
+                        Text("Selected mic (not connected)").tag(state.micUID)
+                    }
+                }
+            }
+
+            pickerRow("Model", systemImage: "text.bubble") {
+                Picker("Speech model", selection: Binding(get: { state.modelChoice }, set: { choose($0) })) {
+                    Section("Built into macOS") {
+                        Text("SpeechTranscriber").tag(ModelChoice.apple(.speechTranscriber))
+                        Text("DictationTranscriber").tag(ModelChoice.apple(.dictationTranscriber))
+                    }
+                    Section("Whisper, for accents") {
+                        ForEach(WhisperModel.allCases) { size in
+                            Text(WhisperStore.isInstalled(size)
+                                 ? size.label : "\(size.label), \(size.downloadLabel) download")
+                                .tag(ModelChoice.whisper(size))
+                        }
+                    }
+                }
+            }
+        }
+        .font(.callout)
+        .onAppear { state.refreshInputDevices() }
+    }
+
+    /// A label column of fixed width and a picker that fills the rest, so every row lines up.
+    private func pickerRow<P: View>(_ title: String, systemImage: String, @ViewBuilder picker: () -> P) -> some View {
+        HStack(spacing: 8) {
+            Label(title, systemImage: systemImage)
+                .frame(width: 62, alignment: .leading)
+            picker()
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    fileprivate func choose(_ choice: ModelChoice) {
+        state.select(choice)
+        // A Whisper size that needs downloading asks first, and that prompt lives in Settings.
+        if state.pendingWhisperDownload != nil { showSettings(.dictation) }
     }
 }
 
@@ -155,15 +259,44 @@ struct SettingsView: View {
     @Bindable var state: AppState
 
     var body: some View {
-        TabView {
+        TabView(selection: $state.settingsTab) {
             GeneralSettingsTab(state: state)
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(SettingsTab.general)
             AppearanceSettingsTab(state: state)
                 .tabItem { Label("Appearance", systemImage: "waveform") }
+                .tag(SettingsTab.appearance)
             DictationSettingsTab(state: state)
                 .tabItem { Label("Dictation", systemImage: "text.bubble") }
+                .tag(SettingsTab.dictation)
+            AboutSettingsTab(state: state)
+                .tabItem { Label("About", systemImage: "info.circle") }
+                .tag(SettingsTab.about)
         }
         .frame(width: 480)
+        // Download prompts live here, not in a tab, so they show wherever the request came from
+        // (the Dictation tab, the Help me choose sheet or the menu bar).
+        .confirmationDialog(
+            "Choose a Whisper size to download",
+            isPresented: $state.choosingWhisperModel
+        ) {
+            ForEach(WhisperModel.allCases) { model in
+                Button("\(model.label), \(model.downloadLabel)") { state.downloadWhisper(model) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Whisper is a one-time download, then works offline. Fast suits clear speech, Balanced suits everyday use and is a good first try for an accent, and Most accurate is best for strong accents or noisy rooms. You can change size or remove it later.")
+        }
+        .alert(
+            "Download Whisper \(state.pendingWhisperDownload?.label ?? "")?",
+            isPresented: Binding(get: { state.pendingWhisperDownload != nil }, set: { if !$0 { state.pendingWhisperDownload = nil } }),
+            presenting: state.pendingWhisperDownload
+        ) { model in
+            Button("Download \(model.downloadLabel)") { state.confirmWhisperDownload() }
+            Button("Cancel", role: .cancel) { state.pendingWhisperDownload = nil }
+        } message: { model in
+            Text("Whisper needs a one-time download of \(model.downloadLabel). After that it works offline and your audio never leaves your Mac. You can remove it later in Settings > Dictation.")
+        }
     }
 }
 
@@ -316,7 +449,7 @@ struct AppearanceSettingsTab: View {
             Section {
                 Toggle("Show a small pill when idle", isOn: $state.showIdleIndicator)
             } header: {
-                SettingsHeader("Idle indicator", info: "A tiny pill shows the app is running. It turns orange while setup is incomplete.")
+                SettingsHeader("Idle indicator", info: "A small pill shows the app is running. It turns orange while setup is incomplete. Click it to start dictating, and click it again to finish.")
             }
         }
         .settingsTabStyle()
@@ -415,26 +548,135 @@ struct DictationSettingsTab: View {
             }
         }
         .settingsTabStyle()
-        .confirmationDialog(
-            "Choose a Whisper size to download",
-            isPresented: $state.choosingWhisperModel
-        ) {
-            ForEach(WhisperModel.allCases) { model in
-                Button("\(model.label), \(model.downloadLabel)") { state.downloadWhisper(model) }
+    }
+}
+
+/// Everything someone needs to know about the app, with the local-first promise first.
+struct AboutSettingsTab: View {
+    @Bindable var state: AppState
+    @State private var copied = false
+
+    private static let repo = "https://github.com/darin2036/Plainspoken"
+    private static let links: [(title: String, symbol: String, path: String)] = [
+        ("Source code", "chevron.left.forwardslash.chevron.right", ""),
+        ("Report an issue", "exclamationmark.bubble", "/issues"),
+        ("MIT license", "doc.text", "/blob/main/LICENSE"),
+        ("Security policy", "lock.shield", "/blob/main/SECURITY.md"),
+        ("Privacy details", "hand.raised", "/blob/main/README.md#privacy-and-control"),
+    ]
+
+    private var whisperMB: Int {
+        WhisperModel.allCases.compactMap { WhisperStore.installedMB($0) }.reduce(0, +)
+    }
+
+    var body: some View {
+        Form {
+            // The point of the app, before anything else.
+            Section {
+                VStack(spacing: 8) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 34))
+                        .foregroundStyle(.tint)
+                        .accessibilityHidden(true)
+                    Text("Everything runs on your Mac")
+                        .font(.title2).fontWeight(.semibold)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Plainspoken is local by design. Your voice and your words never leave this Mac, and there are no cloud services behind it.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Whisper is a one-time download, then works offline. Fast suits clear speech, Balanced suits everyday use and is a good first try for an accent, and Most accurate is best for strong accents or noisy rooms. You can change size or remove it later.")
+
+            Section {
+                PrivacyPoint("No accounts, API keys or cloud services", symbol: "icloud.slash")
+                PrivacyPoint("Transcripts are ephemeral: never saved, never logged", symbol: "memorychip")
+                PrivacyPoint("No tracking, analytics or crash reporting", symbol: "eye.slash")
+                PrivacyPoint("Works offline once its models are installed", symbol: "wifi.slash")
+                PrivacyPoint("Goes online for only two things: speech models you choose to download, and a daily check for a new release you can turn off. The rest of the time the app blocks its own network access.", symbol: "network.badge.shield.half.filled")
+            } header: {
+                Text("Your privacy")
+            }
+
+            if whisperMB > 0 {
+                Section {
+                    LabeledContent("Whisper models", value: "\(whisperMB) MB on this Mac")
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([WhisperStore.base])
+                    }
+                } header: {
+                    Text("Stored on your Mac")
+                }
+            }
+
+            Section {
+                ForEach(Self.links, id: \.title) { link in
+                    Link(destination: URL(string: Self.repo + link.path)!) {
+                        Label {
+                            Text(link.title)
+                        } icon: {
+                            Image(systemName: link.symbol).frame(width: 22)
+                        }
+                    }
+                }
+            } header: {
+                Text("Links")
+            }
+
+            Section {
+                LabeledContent("Version") {
+                    Text(state.versionDescription).textSelection(.enabled)
+                }
+                HStack {
+                    Text("Copy details for a bug report")
+                    Spacer()
+                    Button(copied ? "Copied" : "Copy Support Info") {
+                        state.copySupportInfo()
+                        copied = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            copied = false
+                        }
+                    }
+                }
+            } header: {
+                SettingsHeader("Support", info: "Copies the app version, your macOS version, your Mac's chip and the speech model you have selected. Nothing you have said or written, and nothing is sent anywhere: you paste it into an issue yourself.")
+            }
+
+            Section {
+                Text("Speech recognition and the rewrite use Apple's on-device Speech and Foundation Models frameworks. The optional Whisper engine is OpenAI's Whisper model (MIT license), run on your Mac with WhisperKit by Argmax (MIT license). Plainspoken is free and open source under the MIT license.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Credits")
+            }
         }
-        .alert(
-            "Download Whisper \(state.pendingWhisperDownload?.label ?? "")?",
-            isPresented: Binding(get: { state.pendingWhisperDownload != nil }, set: { if !$0 { state.pendingWhisperDownload = nil } }),
-            presenting: state.pendingWhisperDownload
-        ) { model in
-            Button("Download \(model.downloadLabel)") { state.confirmWhisperDownload() }
-            Button("Cancel", role: .cancel) { state.pendingWhisperDownload = nil }
-        } message: { model in
-            Text("Whisper needs a one-time download of \(model.downloadLabel). After that it works offline and your audio never leaves your Mac. You can remove it later in this tab.")
+        .formStyle(.grouped)
+        .frame(height: 560)
+    }
+}
+
+/// One line of the privacy list: an icon the screen reader skips, and the sentence.
+private struct PrivacyPoint: View {
+    let text: String
+    let symbol: String
+
+    init(_ text: String, symbol: String) {
+        self.text = text
+        self.symbol = symbol
+    }
+
+    var body: some View {
+        Label {
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: symbol)
+                .foregroundStyle(.green)
+                .frame(width: 22)
+                .accessibilityHidden(true)
         }
     }
 }
