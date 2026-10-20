@@ -157,20 +157,69 @@ struct SettingsView: View {
     }
 }
 
-/// Each tab is a grouped form: a short control per row, with the explanation in a quiet footer
-/// instead of caption text wedged between rows.
+/// An info button: hover shows a tooltip; click (or VoiceOver / keyboard activation) opens the same
+/// text in a popover, so settings stay uncluttered.
+struct InfoButton: View {
+    let label: String
+    let info: String
+    @State private var shown = false
+
+    var body: some View {
+        Button { shown.toggle() } label: {
+            Image(systemName: "info.circle")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(info)
+        .accessibilityLabel("About \(label)")
+        .accessibilityHint("Shows more information")
+        .popover(isPresented: $shown, arrowEdge: .bottom) {
+            Text(info)
+                .font(.callout)
+                .textCase(nil)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 300, alignment: .leading)
+                .padding(14)
+        }
+    }
+}
+
+/// A section title with an info button beside it.
+struct SettingsHeader: View {
+    let title: String
+    let info: String
+
+    init(_ title: String, info: String) {
+        self.title = title
+        self.info = info
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(title)
+            InfoButton(label: title, info: info)
+        }
+    }
+}
+
+/// Each tab is a grouped form: a short control per row, with the explanation behind an info
+/// button in the section title.
 struct GeneralSettingsTab: View {
     @Bindable var state: AppState
 
     var body: some View {
         Form {
             Section {
-                Label("Everything runs on your Mac", systemImage: "lock.shield.fill")
-                    .fontWeight(.medium)
+                HStack {
+                    Label("Everything runs on your Mac", systemImage: "lock.shield.fill")
+                        .fontWeight(.medium)
+                    Spacer()
+                    InfoButton(
+                        label: "privacy",
+                        info: "What you say and write never leaves your Mac. There are no cloud services, accounts, tracking or analytics. Transcripts are ephemeral: they are never saved or logged and exist only in memory while you use them. The app goes online only to download a speech model: Apple's, through macOS, or Whisper, and only if you choose it and confirm. At every other time the app blocks its own network access.")
+                }
             } header: {
                 Text("Privacy")
-            } footer: {
-                Text("What you say and write never leaves your Mac. There are no cloud services, accounts, tracking or analytics. Transcripts are ephemeral: they are never saved or logged and exist only in memory while you use them. The app goes online only to download a speech model: Apple's, through macOS, or Whisper, and only if you choose it and confirm. At every other time the app blocks its own network access.")
             }
 
             Section {
@@ -178,9 +227,7 @@ struct GeneralSettingsTab: View {
                     ForEach(HotkeyKey.allCases) { Text($0.label).tag($0) }
                 }
             } header: {
-                Text("Hold to talk")
-            } footer: {
-                Text("Fn/Globe can clash with the system's dictation and emoji shortcuts.")
+                SettingsHeader("Hold to talk", info: "Fn/Globe can clash with the system's dictation and emoji shortcuts.")
             }
 
             Section {
@@ -192,17 +239,13 @@ struct GeneralSettingsTab: View {
                     }
                 }
             } header: {
-                Text("Microphone")
-            } footer: {
-                Text("Choose the Mac's built-in microphone to keep Bluetooth headphones in high-quality listening mode. A Bluetooth mic switches them to call mode, which adds latency.")
+                SettingsHeader("Microphone", info: "Choose the Mac's built-in microphone to keep Bluetooth headphones in high-quality listening mode. A Bluetooth mic switches them to call mode, which adds latency.")
             }
 
             Section {
                 Toggle("Paste when no text box is detected", isOn: $state.pasteWhenNoTextBox)
             } header: {
-                Text("Typing")
-            } footer: {
-                Text("On: Plainspoken pastes even if it can't see a text box, and leaves the text on your clipboard in case it didn't land. Off: it only copies the text to your clipboard.")
+                SettingsHeader("Typing", info: "On: Plainspoken pastes even if it can't see a text box, and leaves the text on your clipboard in case it didn't land. Off: it only copies the text to your clipboard.")
             }
         }
         .settingsTabStyle()
@@ -221,17 +264,13 @@ struct AppearanceSettingsTab: View {
                 .pickerStyle(.segmented)
                 Button("Preview with a test voice") { state.previewVisualizer() }
             } header: {
-                Text("Listening display")
-            } footer: {
-                Text("What the bar at the bottom of the screen shows while you talk.")
+                SettingsHeader("Listening display", info: "What the bar at the bottom of the screen shows while you talk.")
             }
 
             Section {
                 Toggle("Show a small pill when idle", isOn: $state.showIdleIndicator)
             } header: {
-                Text("Idle indicator")
-            } footer: {
-                Text("A tiny pill shows the app is running. It turns orange while setup is incomplete.")
+                SettingsHeader("Idle indicator", info: "A tiny pill shows the app is running. It turns orange while setup is incomplete.")
             }
         }
         .settingsTabStyle()
@@ -285,25 +324,15 @@ struct DictationSettingsTab: View {
                     }
                 }
             } header: {
-                Text("Speech recognition")
-            } footer: {
-                if state.engine == .whisper {
-                    Text("Whisper runs on your Mac. It doesn't have regional variants, so it relies on being trained on many accents. Text appears after you let go of the key.")
-                } else {
-                    Text("Regional variants such as English (Australia) or English (India) use separate models, so choose the one closest to how you speak. A new model downloads the first time you pick it.")
-                }
+                SettingsHeader("Speech recognition", info: state.engine == .whisper
+                    ? "Whisper runs on your Mac. It doesn't have regional variants, so it relies on being trained on many accents. Text appears after you let go of the key."
+                    : "Regional variants such as English (Australia) or English (India) use separate models, so choose the one closest to how you speak. A new model downloads the first time you pick it.")
             }
             .task(id: state.engine) {
                 locales = await SpeechAssets.supportedLocales(for: state.engine)
             }
 
             Section {
-                Label {
-                    Text("Apple's engines keep the app small and quick, but they can struggle with accents and some speech patterns. If that's you, Whisper is more forgiving, in exchange for a one-time download and a short wait after you let go of the key.")
-                        .font(.callout)
-                } icon: {
-                    Image(systemName: "lightbulb.fill").foregroundStyle(.yellow)
-                }
                 Button("Help me choose…") { showHelp = true }
                     .accessibilityHint("Opens a short guide to the speech engines and Whisper sizes")
             }
@@ -325,9 +354,7 @@ struct DictationSettingsTab: View {
                         }
                     }
                 } header: {
-                    Text("Downloaded Whisper models")
-                } footer: {
-                    Text("Removing a model frees the space. You can download it again whenever you like.")
+                    SettingsHeader("Downloaded Whisper models", info: "Removing a model frees the space. You can download it again whenever you like.")
                 }
             }
 
@@ -338,9 +365,7 @@ struct DictationSettingsTab: View {
                     Button("Show in Finder") { state.revealVocabularyFile() }
                 }
             } header: {
-                Text("Custom vocabulary")
-            } footer: {
-                Text("A plain text file with one name or term per line. Edit it in any editor; changes apply to your next dictation. If the recognizer keeps mishearing a word, write Term=heard, such as Rovo=bravo|robo.")
+                SettingsHeader("Custom vocabulary", info: "A plain text file with one name or term per line. Edit it in any editor; changes apply to your next dictation. If the recognizer keeps mishearing a word, write Term=heard, such as Rovo=bravo|robo.")
             }
         }
         .settingsTabStyle()

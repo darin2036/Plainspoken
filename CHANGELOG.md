@@ -12,6 +12,10 @@ released, rename **Unreleased** to the version and date and start a new empty **
 
 First development version (0.1.0). Nothing has been released yet.
 
+### Changed
+
+- Settings helper text now lives behind an info button next to each section title (hover for a tooltip, click for a popover) instead of showing under every section.  The privacy statement is behind an info button on the "Everything runs on your Mac" row.
+
 ### Fixed
 
 - Whisper could silently re-download its tokenizer at load time if the local copy was missing. The tokenizer is now fetched and verified during the approved download, and the app blocks all of its own web requests outside an approved download, so that situation now fails with an error instead of going online. Checked by running dictation with the network denied at the OS level.
