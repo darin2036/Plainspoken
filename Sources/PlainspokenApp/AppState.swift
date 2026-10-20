@@ -80,6 +80,26 @@ final class AppState {
         }
     }
 
+    var whisperModel: WhisperModel = Prefs.whisperModel {
+        didSet {
+            Prefs.whisperModel = whisperModel
+            if engine == .whisper { prepareSpeechModel() }
+        }
+    }
+
+    /// Whisper language code; empty follows the system language.
+    var whisperLanguage: String = Prefs.whisperLanguage {
+        didSet { Prefs.whisperLanguage = whisperLanguage }
+    }
+
+    /// Set when the user picks a Whisper model that isn't downloaded yet; settings asks them to
+    /// confirm the download before anything is fetched.
+    var pendingWhisperDownload: WhisperModel?
+    /// Models the user has agreed to download. Nothing else ever triggers a Whisper download.
+    @ObservationIgnored private var approvedWhisperDownloads: Set<WhisperModel> = []
+    /// Bumped when a model is downloaded or removed so settings re-reads what is installed.
+    private(set) var whisperStoreVersion = 0
+
     /// Recognition locale identifier; empty follows the system locale.
     var localeID: String = Prefs.localeID {
         didSet {
@@ -229,12 +249,52 @@ final class AppState {
 
     // MARK: Speech model
 
+    /// Picks an engine. Choosing Whisper with no model on disk asks first instead of downloading.
+    func chooseEngine(_ new: SpeechEngine) {
+        if new == .whisper, !WhisperStore.isInstalled(whisperModel) {
+            pendingWhisperDownload = whisperModel
+        } else {
+            engine = new
+        }
+    }
+
+    /// Picks a Whisper size. A size that isn't downloaded yet asks first.
+    func chooseWhisperModel(_ new: WhisperModel) {
+        if WhisperStore.isInstalled(new) {
+            whisperModel = new
+        } else {
+            pendingWhisperDownload = new
+        }
+    }
+
+    /// The user agreed to the download prompt: switch to Whisper and fetch the model.
+    func confirmWhisperDownload() {
+        guard let model = pendingWhisperDownload else { return }
+        pendingWhisperDownload = nil
+        approvedWhisperDownloads.insert(model)
+        let modelChanges = whisperModel != model, engineChanges = engine != .whisper
+        // Each assignment below prepares at most once, and the last one decides.
+        if modelChanges { whisperModel = model }
+        if engineChanges { engine = .whisper }
+        if !modelChanges && !engineChanges { prepareSpeechModel() }
+    }
+
+    func removeWhisperModel(_ model: WhisperModel) {
+        Task { [weak self] in
+            await WhisperStore.remove(model)
+            guard let self else { return }
+            whisperStoreVersion += 1
+            if engine == .whisper, whisperModel == model { engine = .speechTranscriber }
+        }
+    }
+
     /// Installs the on-device speech model if needed (first run downloads it, then it's offline).
     func prepareSpeechModel() {
         prepareTask?.cancel()
         speechModel = .preparing(nil)
         let engine = engine
         let requested = localeID.isEmpty ? Locale.current : Locale(identifier: localeID)
+        if engine == .whisper { prepareWhisper(); return }
         prepareTask = Task { [weak self] in
             do {
                 let locale = try await SpeechAssets.prepare(locale: requested, engine: engine) { fraction in
@@ -249,6 +309,40 @@ final class AppState {
                 guard !Task.isCancelled else { return }
                 self?.speechModel = .failed("\(error)")
                 log.error("speech model prepare failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    private func prepareWhisper() {
+        let model = whisperModel
+        let allowDownload = approvedWhisperDownloads.contains(model)
+        guard allowDownload || WhisperStore.isInstalled(model) else {
+            // Whisper is selected but its model is gone (removed, or never finished). Never
+            // download silently: go back to the built-in engine and say why.
+            statusNote = "Whisper \(model.label) isn't downloaded, so Plainspoken switched to Apple's engine."
+            engine = .speechTranscriber
+            return
+        }
+        prepareTask = Task { [weak self] in
+            do {
+                try await WhisperStore.prepare(model, allowDownload: allowDownload) { fraction in
+                    Task { @MainActor in
+                        if case .preparing = self?.speechModel { self?.speechModel = .preparing(fraction) }
+                    }
+                }
+                guard !Task.isCancelled else { return }
+                self?.approvedWhisperDownloads.remove(model)
+                self?.whisperStoreVersion += 1
+                self?.speechModel = .ready
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.approvedWhisperDownloads.remove(model)
+                self?.whisperStoreVersion += 1
+                self?.speechModel = .failed("Whisper setup failed: \(error)")
+                log.error("whisper prepare failed: \(String(describing: error), privacy: .public)")
+                // A failed download shouldn't leave the user stuck on an engine that can't run.
+                self?.statusNote = "Whisper couldn't be set up, so Plainspoken switched to Apple's engine."
+                self?.engine = .speechTranscriber
             }
         }
     }
@@ -281,9 +375,10 @@ final class AppState {
             hud.showListening()
 
             let engine = engine, locale = speechLocale, vocabulary = VocabularyFile.load()
+            let whisperLanguage = self.whisperLanguage.isEmpty ? Self.systemWhisperLanguage : self.whisperLanguage
             let sessionTask = Task {
-                try await TranscriptionSession.start(
-                    locale: locale, engine: engine, vocabulary: vocabulary,
+                try await Dictation.start(
+                    engine: engine, locale: locale, whisperLanguage: whisperLanguage, vocabulary: vocabulary,
                     onPartial: { text in
                         Task { @MainActor in
                             AppState.shared.partialText = text
@@ -297,7 +392,7 @@ final class AppState {
                 var frames = 0
                 var peak: Float = 0
                 var rate = 0.0
-                var session: TranscriptionSession?
+                var session: (any DictationSession)?
                 var sessionError: Error?
                 do { session = try await sessionTask.value } catch { sessionError = error }
 
@@ -322,6 +417,11 @@ final class AppState {
         }
     }
 
+    /// The system language as a Whisper code ("en"), used when no Whisper language is chosen.
+    private static var systemWhisperLanguage: String? {
+        Locale.current.language.languageCode?.identifier
+    }
+
     private func endRecording() {
         guard isListening else { return }
         audio.stop()
@@ -330,7 +430,7 @@ final class AppState {
         hud.showWorking("Transcribing…")
     }
 
-    private func finishUtterance(session: TranscriptionSession?, error: Error?, summary: String) async {
+    private func finishUtterance(session: (any DictationSession)?, error: Error?, summary: String) async {
         lastRecording = summary
         guard let session else {
             statusNote = "Speech recognition failed to start: \(error.map { "\($0)" } ?? "unknown")"

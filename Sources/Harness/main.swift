@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import PlainspokenCore
 
+// Whisper: --engine whisper [--whisper-model fast|balanced|accurate] (downloads the model if missing)
 // Usage: harness [samples.json] [--temp 0.2] [--no-schema] [--only N] [--instructions file.txt] [--runs K]
 // samples.json: [{ "raw": "...", "ideal": "...", "category": "optional" }]
 
@@ -18,6 +19,7 @@ var runs = 1
 var pipeline = false  // run the full fallback chain and show what the user would actually get
 var audioPath: String?  // --transcribe: run an audio file through the speech stack instead of samples.json
 var engine = SpeechEngine.speechTranscriber
+var whisperModel = WhisperModel.balanced
 var vocabulary: [String] = []  // --vocab "Jira,Rovo": custom terms for the rewrite hint and correction
 var stress = 0  // --stress N: repeat every sample N times as one long transcript to exercise chunking
 var oneOff: String?  // --text "...": run one transcript through the pipeline
@@ -32,7 +34,10 @@ while !argv.isEmpty {
     case "--schema": config.structuredOutput = true
     case "--pipeline": pipeline = true
     case "--transcribe": audioPath = argv.removeFirst()
-    case "--engine": engine = argv.removeFirst().hasPrefix("d") ? .dictationTranscriber : .speechTranscriber
+    case "--engine":
+        let name = argv.removeFirst()
+        engine = name.hasPrefix("w") ? .whisper : name.hasPrefix("d") ? .dictationTranscriber : .speechTranscriber
+    case "--whisper-model": whisperModel = WhisperModel(rawValue: argv.removeFirst()) ?? whisperModel
     case "--rewrite": rewriteTranscript = true
     case "--vocab": vocabulary = argv.removeFirst().split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
     case "--stress": stress = Int(argv.removeFirst()) ?? 1
@@ -49,17 +54,24 @@ if let audioPath {
     do {
         let file = try AVAudioFile(forReading: URL(fileURLWithPath: audioPath))
         var lastDownload = -1
-        let locale = try await SpeechAssets.prepare(engine: engine) { p in
+        let report: @Sendable (Double) -> Void = { p in
             let pct = Int(p * 100)
             if pct / 10 != lastDownload / 10 { lastDownload = pct; print("downloading speech model… \(pct)%") }
+        }
+        var locale = Locale.current
+        if engine == .whisper {
+            try await WhisperStore.prepare(whisperModel, allowDownload: true, progress: report)
+        } else {
+            locale = try await SpeechAssets.prepare(engine: engine, progress: report)
         }
         print("engine=\(engine.rawValue) locale=\(locale.identifier) file=\(audioPath) (\(String(format: "%.1f", Double(file.length) / file.processingFormat.sampleRate))s)")
 
         // Without --vocab, use the same vocabulary file the app uses.
         let vocab = vocabulary.isEmpty ? VocabularyFile.load() : vocabulary
         let started = Date()
-        let session = try await TranscriptionSession.start(
+        let session = try await Dictation.start(
             engine: engine,
+            whisperLanguage: Locale.current.language.languageCode?.identifier,
             vocabulary: vocab,
             onPartial: { print("  partial: \($0)") }
         )

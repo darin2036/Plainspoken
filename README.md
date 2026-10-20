@@ -23,7 +23,7 @@ Push-to-talk dictation for macOS, with the rewrite done by **Apple's on-device F
 
 Ordinary dictation writes down everything you say: the false starts, the "um, actually, no", the three attempts at the same sentence. You end up editing more than you saved.
 
-Plainspoken is a free, open source menu bar app for macOS that fixes that. It listens while you hold a key, then types the version of the text you would have written if you'd composed it carefully, in your own words. The cleanup is done by Apple's Foundation Models, the on-device language model behind Apple Intelligence, and the speech recognition is Apple's on-device speech framework. Plainspoken ships no model of its own and calls no cloud service: no servers, accounts, API keys or third-party dependencies.
+Plainspoken is a free, open source menu bar app for macOS that fixes that. It listens while you hold a key, then types the version of the text you would have written if you'd composed it carefully, in your own words. The cleanup is done by Apple's Foundation Models, the on-device language model behind Apple Intelligence, and the speech recognition is Apple's on-device speech framework. Plainspoken ships no model of its own and calls no cloud service: no servers, accounts or API keys. The one optional extra is [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift), an open source package that runs OpenAI's Whisper locally; its model is downloaded only if you choose Whisper in Settings and agree to the prompt.
 
 ```
 you say:   "let's meet Tuesday no wait Thursday afternoon and send the notes to Priya
@@ -48,6 +48,7 @@ it types:  "Let's meet Thursday afternoon and send the notes to the whole team."
 - **Rewrites for intent.** Keeps only the final version of a self-correction, drops "scratch that" and "let me rephrase", merges repetition, formats spoken lists, and keeps your own voice.
 - **Never answers you.** Dictate a question and you get the question back. Dictate a command and you get the command written out, not carried out.
 - **Fully on-device.** Apple's speech recognition and Foundation Models. Nothing leaves your Mac.
+- **Optional Whisper for accents.** Off by default. Pick Whisper in Settings > Dictation and the app explains the one-time download (about 150 to 650 MB depending on the size) before fetching it. Settings also has a plain-language guide to which engine and size suits you, and you can remove the download at any time.
 - **Always gives you something.** If the rewrite is unavailable or looks wrong, it falls back to light cleanup, then to the raw transcript.
 - **Careful with your clipboard.** Typing goes through Accessibility when it can. When it has to paste, your clipboard is saved and restored.
 - **A bar you can see.** A small pill at the bottom of the screen shows the app is alive, then turns into a live waveform while you talk. Choose a green oscilloscope or a pixelated Fire visualizer.

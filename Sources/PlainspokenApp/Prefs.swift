@@ -83,6 +83,17 @@ enum Prefs {
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "speechEngine") }
     }
 
+    static var whisperModel: WhisperModel {
+        get { WhisperModel(rawValue: UserDefaults.standard.string(forKey: "whisperModel") ?? "") ?? .balanced }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "whisperModel") }
+    }
+
+    /// Whisper language code (e.g. "en"); empty means "match the system language".
+    static var whisperLanguage: String {
+        get { UserDefaults.standard.string(forKey: "whisperLanguage") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "whisperLanguage") }
+    }
+
     /// Identifier of the chosen recognition locale (e.g. "en_AU"); empty means "follow the system".
     static var localeID: String {
         get { UserDefaults.standard.string(forKey: "speechLocale") ?? "" }

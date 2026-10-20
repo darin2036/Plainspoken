@@ -231,31 +231,107 @@ struct AppearanceSettingsTab: View {
 struct DictationSettingsTab: View {
     @Bindable var state: AppState
     @State private var locales: [Locale] = []
+    @State private var showGuide = false
+
+    private var engineBinding: Binding<SpeechEngine> {
+        Binding(get: { state.engine }, set: { state.chooseEngine($0) })
+    }
+
+    private var whisperModelBinding: Binding<WhisperModel> {
+        Binding(get: { state.whisperModel }, set: { state.chooseWhisperModel($0) })
+    }
+
+    private var downloading: Bool {
+        if case .preparing = state.speechModel { return state.engine == .whisper }
+        return false
+    }
 
     var body: some View {
         Form {
             Section {
-                Picker("Engine", selection: $state.engine) {
+                Picker("Engine", selection: engineBinding) {
                     ForEach(SpeechEngine.allCases) { Text($0.label).tag($0) }
                 }
-                Picker("Language & accent", selection: $state.localeID) {
-                    Text("Match system").tag("")
-                    ForEach(locales, id: \.identifier) { locale in
-                        Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
-                            .tag(locale.identifier)
+                if state.engine == .whisper {
+                    Picker("Whisper model", selection: whisperModelBinding) {
+                        ForEach(WhisperModel.allCases) { Text("\($0.label) (\($0.downloadLabel))").tag($0) }
                     }
-                    // Keep a saved choice visible even if the list hasn't loaded or the engine lacks it.
-                    if !state.localeID.isEmpty, !locales.contains(where: { $0.identifier == state.localeID }) {
-                        Text(state.localeID).tag(state.localeID)
+                    Picker("Language", selection: $state.whisperLanguage) {
+                        Text("Match system").tag("")
+                        ForEach(WhisperLanguages.all, id: \.code) { Text($0.name).tag($0.code) }
+                    }
+                    if downloading { SpeechModelRow(model: state.speechModel) }
+                } else {
+                    Picker("Language & accent", selection: $state.localeID) {
+                        Text("Match system").tag("")
+                        ForEach(locales, id: \.identifier) { locale in
+                            Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                                .tag(locale.identifier)
+                        }
+                        // Keep a saved choice visible even if the list hasn't loaded or the engine lacks it.
+                        if !state.localeID.isEmpty, !locales.contains(where: { $0.identifier == state.localeID }) {
+                            Text(state.localeID).tag(state.localeID)
+                        }
                     }
                 }
             } header: {
                 Text("Speech recognition")
             } footer: {
-                Text("Both engines run on your Mac. Regional variants such as English (Australia) or English (India) use separate models, so choose the one closest to how you speak. A new model downloads the first time you pick it.")
+                if state.engine == .whisper {
+                    Text("Whisper runs on your Mac. It doesn't have regional variants, so it relies on being trained on many accents. Text appears after you let go of the key.")
+                } else {
+                    Text("Regional variants such as English (Australia) or English (India) use separate models, so choose the one closest to how you speak. A new model downloads the first time you pick it.")
+                }
             }
             .task(id: state.engine) {
                 locales = await SpeechAssets.supportedLocales(for: state.engine)
+            }
+
+            Section {
+                DisclosureGroup("Which should I choose?", isExpanded: $showGuide) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(SpeechEngine.allCases) { engine in
+                            ChoiceGuideRow(
+                                title: engine.label, bestFor: engine.bestFor,
+                                benefit: engine.benefit, tradeoff: engine.tradeoff,
+                                inUse: state.engine == engine)
+                            if engine == .whisper {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(WhisperModel.allCases) { model in
+                                        ChoiceGuideRow(
+                                            title: "\(model.label), \(model.downloadLabel)", bestFor: model.bestFor,
+                                            benefit: model.benefit, tradeoff: model.tradeoff,
+                                            inUse: state.engine == .whisper && state.whisperModel == model)
+                                    }
+                                }
+                                .padding(.leading, 14)
+                            }
+                        }
+                        Text("Not sure? Start with Apple SpeechTranscriber. If it keeps mishearing you, try Whisper Balanced and compare. You can switch back at any time.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 6)
+                }
+            }
+
+            let _ = state.whisperStoreVersion
+            let installed = WhisperModel.allCases.filter { WhisperStore.isInstalled($0) }
+            if !installed.isEmpty {
+                Section {
+                    ForEach(installed) { model in
+                        let size = WhisperStore.installedMB(model).map { "\($0) MB" } ?? ""
+                        HStack {
+                            Text(model.label)
+                            Spacer()
+                            Text(size).foregroundStyle(.secondary)
+                            Button("Remove") { state.removeWhisperModel(model) }
+                        }
+                    }
+                } header: {
+                    Text("Downloaded Whisper models")
+                } footer: {
+                    Text("Removing a model frees the space. You can download it again whenever you like.")
+                }
             }
 
             Section {
@@ -271,6 +347,47 @@ struct DictationSettingsTab: View {
             }
         }
         .settingsTabStyle()
+        .alert(
+            "Download Whisper \(state.pendingWhisperDownload?.label ?? "")?",
+            isPresented: Binding(get: { state.pendingWhisperDownload != nil }, set: { if !$0 { state.pendingWhisperDownload = nil } }),
+            presenting: state.pendingWhisperDownload
+        ) { model in
+            Button("Download \(model.downloadLabel)") { state.confirmWhisperDownload() }
+            Button("Cancel", role: .cancel) { state.pendingWhisperDownload = nil }
+        } message: { model in
+            Text("Whisper needs a one-time download of \(model.downloadLabel). After that it works offline and your audio never leaves your Mac. You can remove it later in this tab.")
+        }
+    }
+}
+
+/// One option in the "Which should I choose?" list: who it suits, what you gain, what it costs.
+struct ChoiceGuideRow: View {
+    let title: String
+    let bestFor: String
+    let benefit: String
+    let tradeoff: String
+    let inUse: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(title).fontWeight(.semibold)
+                if inUse {
+                    Text("In use")
+                        .font(.caption2).fontWeight(.medium)
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(.tint.opacity(0.2), in: Capsule())
+                }
+            }
+            Text(bestFor).font(.callout)
+            Label { Text(benefit).foregroundStyle(.secondary) } icon: {
+                Image(systemName: "plus.circle.fill").foregroundStyle(.green)
+            }
+            Label { Text(tradeoff).foregroundStyle(.secondary) } icon: {
+                Image(systemName: "minus.circle.fill").foregroundStyle(.orange)
+            }
+        }
+        .font(.caption)
     }
 }
 
