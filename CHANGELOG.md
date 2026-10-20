@@ -14,6 +14,7 @@ First development version (0.1.0). Nothing has been released yet.
 
 ### Changed
 
+- The menu bar drop-down now lists only what still needs attention (missing permissions, a speech model that isn't ready, an available update) instead of a row of green checkmarks, and has quick pickers for the microphone and the speech model (Apple engines and Whisper sizes). Choosing a Whisper size that isn't downloaded yet opens Settings with the download prompt. The idle pill is larger and sharper with an unclipped soft shadow, and a ghost edge under the menu panel is fixed.
 - Settings > General > Updates shows the full version, including the build number and git commit (with "-dirty" if built from uncommitted changes), so you can tell exactly which build is running.
 - Settings helper text now lives behind an info button next to each section title (hover for a tooltip, click for a popover) instead of showing under every section.  The privacy statement is behind an info button on the "Everything runs on your Mac" row.
 
@@ -24,6 +25,7 @@ First development version (0.1.0). Nothing has been released yet.
 
 ### Added
 
+- The resting pill is clickable: click it to start dictating and click it again to finish, as an alternative to holding the hotkey. It never takes focus, so text still lands in the app you were using.
 - Update notifications. About once a day the app checks GitHub for a newer release and, if there is one, shows "Version X is available" in the menu and in Settings > General, with a button that opens the release page. It never installs anything itself. The check sends nothing about you or your Mac, can be switched off in Settings (Check automatically), and can also be run by hand with Check for Updates. The privacy text now lists this check alongside model downloads.
 - A Privacy note at the top of Settings > General, and a rewritten Privacy and control section in the README, stating that the app runs locally with no cloud services and exactly when it goes online.
 - Optional Whisper speech engine (Settings > Dictation) for accents the Apple engines struggle with. Three sizes; picking Whisper asks which size to download and states its size first; nothing is fetched otherwise. If the model is missing or the download fails, the app falls back to Apple's engine. Downloaded models can be removed in Settings.

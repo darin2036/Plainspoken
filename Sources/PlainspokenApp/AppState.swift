@@ -7,6 +7,25 @@ import PlainspokenCore
 
 private let log = Logger(subsystem: "io.github.darin2036.Plainspoken", category: "app")
 
+/// Which tab Settings shows. The menu sets it so a prompt or link lands on the right page.
+enum SettingsTab: Hashable {
+    case general, appearance, dictation
+}
+
+/// One entry in the menu's speech model picker: an Apple engine or a Whisper size.
+enum ModelChoice: Hashable {
+    case apple(SpeechEngine)
+    case whisper(WhisperModel)
+
+    var label: String {
+        switch self {
+        case .apple(.dictationTranscriber): return "Apple DictationTranscriber"
+        case .apple: return "Apple SpeechTranscriber"
+        case .whisper(let size): return "Whisper \(size.label)"
+        }
+    }
+}
+
 enum UpdateStatus: Equatable {
     case idle
     case checking
@@ -114,6 +133,22 @@ final class AppState {
 
     private(set) var updateStatus = UpdateStatus.idle
 
+    var settingsTab = SettingsTab.general
+
+    /// What the menu's model picker shows as selected.
+    var modelChoice: ModelChoice {
+        engine == .whisper ? .whisper(whisperModel) : .apple(engine)
+    }
+
+    /// Picks a model from the menu. A Whisper size that isn't downloaded sets the download prompt,
+    /// which Settings shows, so the caller should open Settings when `pendingWhisperDownload` is set.
+    func select(_ choice: ModelChoice) {
+        switch choice {
+        case .apple(let engine): self.engine = engine
+        case .whisper(let size): use(.whisper, whisper: size)
+        }
+    }
+
     var autoCheckUpdates: Bool = Prefs.autoCheckUpdates {
         didSet { Prefs.autoCheckUpdates = autoCheckUpdates }
     }
@@ -203,6 +238,7 @@ final class AppState {
         started = true
 
         monitor.key = hotkey
+        hud.model.onTap = { [weak self] in self?.pillTapped() }
         monitor.onPress = { [weak self] in MainActor.assumeIsolated { self?.beginRecording() } }
         monitor.onRelease = { [weak self] in MainActor.assumeIsolated { self?.endRecording() } }
 
@@ -510,6 +546,16 @@ final class AppState {
     /// The system language as a Whisper code ("en"), used when no Whisper language is chosen.
     private static var systemWhisperLanguage: String? {
         Locale.current.language.languageCode?.identifier
+    }
+
+    /// Clicking the resting pill starts a dictation; clicking it again while listening finishes it,
+    /// the same as releasing the hotkey.
+    func pillTapped() {
+        if isListening {
+            endRecording()
+        } else if !isFinalizing {
+            beginRecording()
+        }
     }
 
     private func endRecording() {

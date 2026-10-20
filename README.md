@@ -53,7 +53,7 @@ it types:  "Let's meet Thursday afternoon and send the notes to the whole team."
 - **Optional Whisper for accents.** Off by default. Pick Whisper in Settings > Dictation and the app explains the one-time download (about 150 to 650 MB depending on the size) before fetching it. Settings also has a plain-language guide to which engine and size suits you, and you can remove the download at any time.
 - **Always gives you something.** If the rewrite is unavailable or looks wrong, it falls back to light cleanup, then to the raw transcript.
 - **Careful with your clipboard.** Typing goes through Accessibility when it can. When it has to paste, your clipboard is saved and restored.
-- **A bar you can see.** A small pill at the bottom of the screen shows the app is alive, then turns into a live waveform while you talk. Choose a green oscilloscope or a pixelated Fire visualizer.
+- **A bar you can see, and click.** A small pill at the bottom of the screen shows the app is alive, then turns into a live waveform while you talk. Click the pill to start dictating and click it again to finish, if you'd rather not use the keyboard. Choose a green oscilloscope or a pixelated Fire visualizer.
 - **Pick your microphone.** Use the built-in mic while wearing Bluetooth headphones and they stay in high-quality listening mode.
 - **Custom vocabulary.** Names and product terms live in a plain text file you edit anywhere, with aliases for words the recognizer keeps mishearing.
 
@@ -142,7 +142,7 @@ Open them from the menu bar icon.
 | **Microphone** | Any input. The built-in mic keeps Bluetooth headphones out of call mode, which adds latency. Plainspoken captures from the device you pick and never changes your system's default input or output. |
 | **Paste when no text box is detected** | On by default. Pastes even if no text box is visible, which suits apps that hide their fields from Accessibility, and leaves the text on your clipboard in case it didn't land. Off: it only copies the text. |
 | **Listening display** | Oscilloscope or Fire, with a preview button that uses a test voice. |
-| **Idle indicator** | Turns the small resting pill on or off. |
+| **Idle indicator** | Turns the small resting pill on or off. Click the pill to start dictating; click it again to finish. |
 | **Speech engine** | `SpeechTranscriber` (newer) or `DictationTranscriber` (classic). Try both on your own voice. |
 | **Custom vocabulary** | Opens the vocabulary file, described next. |
 

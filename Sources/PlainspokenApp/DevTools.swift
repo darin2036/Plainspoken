@@ -23,6 +23,7 @@ func renderSettings(to dir: String) {
     snapshot(GeneralSettingsTab(state: state), as: "settings-general")
     snapshot(AppearanceSettingsTab(state: state), as: "settings-appearance")
     snapshot(DictationSettingsTab(state: state), as: "settings-dictation")
+    snapshot(MenuView(state: state), as: "menu")
     snapshot(HelpMeChooseSheet(state: state, isPresented: .constant(true)), as: "help-me-choose")
 }
 
@@ -142,8 +143,24 @@ func renderPreviews(to dir: String) {
     idle.phase = .idle
     idle.ready = true
     save(HUDView(model: idle, waveform: waveform).frame(width: 340, height: 110).background(Color(white: 0.55)), as: "pill-idle")
+    save(HUDView(model: idle, waveform: waveform).frame(width: 340, height: 110).background(Color.white), as: "pill-idle-light")
+    save(HUDView(model: idle, waveform: waveform).frame(width: 340, height: 110).background(Color(white: 0.12)), as: "pill-idle-dark")
     idle.ready = false
     save(HUDView(model: idle, waveform: waveform).frame(width: 340, height: 110).background(Color(white: 0.55)), as: "pill-idle-setup")
+
+    // The same pill inside a real, clipping hosting view (like the HUD window), to catch shadows
+    // that get cut off at the window edge. ImageRenderer above doesn't clip.
+    func saveHosted<V: View>(_ view: V, as name: String) {
+        let host = NSHostingView(rootView: view.frame(width: 340, height: 110).background(Color(white: 0.9)))
+        host.frame = NSRect(x: 0, y: 0, width: 340, height: 110)
+        host.layoutSubtreeIfNeeded()
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
+        print("wrote \(dir)/\(name).png")
+    }
+    idle.ready = true
+    saveHosted(HUDView(model: idle, waveform: waveform), as: "pill-idle-clipped")
 
     // Full pill with a partial transcript.
     let model = HUDModel()
