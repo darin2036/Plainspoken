@@ -47,8 +47,8 @@ public enum SpeechEngine: String, CaseIterable, Identifiable, Sendable {
 
     public var tradeoff: String {
         switch self {
-        case .speechTranscriber: return "Uses one model per region, so a mismatched accent can lose accuracy."
-        case .dictationTranscriber: return "Slightly older model, and similar regional limits."
+        case .speechTranscriber: return "Can struggle with accents and some speech patterns (fast, mumbled or non-native speech), because it uses one model per region."
+        case .dictationTranscriber: return "Slightly older model, and shares the same difficulty with accents and some speech patterns."
         case .whisper: return "A one-time download of 150 to 650 MB, more memory, and text appears only after you release the key."
         }
     }

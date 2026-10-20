@@ -95,6 +95,8 @@ final class AppState {
     /// Set when the user picks a Whisper model that isn't downloaded yet; settings asks them to
     /// confirm the download before anything is fetched.
     var pendingWhisperDownload: WhisperModel?
+    /// Set when Whisper is picked with no model installed: settings asks which size to download.
+    var choosingWhisperModel = false
     /// Models the user has agreed to download. Nothing else ever triggers a Whisper download.
     @ObservationIgnored private var approvedWhisperDownloads: Set<WhisperModel> = []
     /// Bumped when a model is downloaded or removed so settings re-reads what is installed.
@@ -251,10 +253,15 @@ final class AppState {
 
     /// Picks an engine. Choosing Whisper with no model on disk asks first instead of downloading.
     func chooseEngine(_ new: SpeechEngine) {
-        if new == .whisper, !WhisperStore.isInstalled(whisperModel) {
-            pendingWhisperDownload = whisperModel
-        } else {
+        guard new == .whisper, !WhisperStore.isInstalled(whisperModel) else {
             engine = new
+            return
+        }
+        if let installed = WhisperModel.allCases.first(where: WhisperStore.isInstalled) {
+            whisperModel = installed
+            engine = .whisper
+        } else {
+            choosingWhisperModel = true
         }
     }
 
@@ -268,6 +275,23 @@ final class AppState {
     }
 
     /// The user agreed to the download prompt: switch to Whisper and fetch the model.
+    /// Switches to an engine from the "Help me choose" sheet, asking first if a download is needed.
+    func use(_ engine: SpeechEngine, whisper size: WhisperModel? = nil) {
+        guard engine == .whisper, let size else { chooseEngine(engine); return }
+        if WhisperStore.isInstalled(size) {
+            whisperModel = size
+            self.engine = .whisper
+        } else {
+            pendingWhisperDownload = size
+        }
+    }
+
+    func downloadWhisper(_ model: WhisperModel) {
+        choosingWhisperModel = false
+        pendingWhisperDownload = model
+        confirmWhisperDownload()
+    }
+
     func confirmWhisperDownload() {
         guard let model = pendingWhisperDownload else { return }
         pendingWhisperDownload = nil

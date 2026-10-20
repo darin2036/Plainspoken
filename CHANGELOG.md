@@ -14,8 +14,8 @@ First development version (0.1.0). Nothing has been released yet.
 
 ### Added
 
-- Optional Whisper speech engine (Settings > Dictation) for accents the Apple engines struggle with. Three sizes, each downloaded only after you confirm a prompt that states the size; nothing is fetched otherwise. If the model is missing or the download fails, the app falls back to Apple's engine. Downloaded models can be removed in Settings.
-- A "Which should I choose?" guide in Settings > Dictation that lays out the benefits and trade-offs of each engine and Whisper size.
+- Optional Whisper speech engine (Settings > Dictation) for accents the Apple engines struggle with. Three sizes; picking Whisper asks which size to download and states its size first; nothing is fetched otherwise. If the model is missing or the download fails, the app falls back to Apple's engine. Downloaded models can be removed in Settings.
+- A "Help me choose" pop-up in Settings > Dictation with quick picks by situation (accent, speech difference, noisy room, disk space) and the benefits and trade-offs of each engine and Whisper size. It works with VoiceOver and the keyboard.
 - A language and accent picker (Settings > Dictation) to choose a regional speech model such as English (Australia) or English (India) instead of always following the system locale.
 - Push-to-talk dictation from the menu bar: hold a key (Right Option by default; Right Command,
   Right Control, Right Shift and Fn/Globe are also available), talk, release.

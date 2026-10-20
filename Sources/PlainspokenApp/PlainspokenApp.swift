@@ -231,7 +231,7 @@ struct AppearanceSettingsTab: View {
 struct DictationSettingsTab: View {
     @Bindable var state: AppState
     @State private var locales: [Locale] = []
-    @State private var showGuide = false
+    @State private var showHelp = false
 
     private var engineBinding: Binding<SpeechEngine> {
         Binding(get: { state.engine }, set: { state.chooseEngine($0) })
@@ -288,30 +288,17 @@ struct DictationSettingsTab: View {
             }
 
             Section {
-                DisclosureGroup("Which should I choose?", isExpanded: $showGuide) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        ForEach(SpeechEngine.allCases) { engine in
-                            ChoiceGuideRow(
-                                title: engine.label, bestFor: engine.bestFor,
-                                benefit: engine.benefit, tradeoff: engine.tradeoff,
-                                inUse: state.engine == engine)
-                            if engine == .whisper {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    ForEach(WhisperModel.allCases) { model in
-                                        ChoiceGuideRow(
-                                            title: "\(model.label), \(model.downloadLabel)", bestFor: model.bestFor,
-                                            benefit: model.benefit, tradeoff: model.tradeoff,
-                                            inUse: state.engine == .whisper && state.whisperModel == model)
-                                    }
-                                }
-                                .padding(.leading, 14)
-                            }
-                        }
-                        Text("Not sure? Start with Apple SpeechTranscriber. If it keeps mishearing you, try Whisper Balanced and compare. You can switch back at any time.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 6)
+                Label {
+                    Text("Apple's engines keep the app small and quick, but they can struggle with accents and some speech patterns. If that's you, Whisper is more forgiving, in exchange for a one-time download and a short wait after you let go of the key.")
+                        .font(.callout)
+                } icon: {
+                    Image(systemName: "lightbulb.fill").foregroundStyle(.yellow)
                 }
+                Button("Help me choose…") { showHelp = true }
+                    .accessibilityHint("Opens a short guide to the speech engines and Whisper sizes")
+            }
+            .sheet(isPresented: $showHelp) {
+                HelpMeChooseSheet(state: state, isPresented: $showHelp)
             }
 
             let _ = state.whisperStoreVersion
@@ -347,6 +334,17 @@ struct DictationSettingsTab: View {
             }
         }
         .settingsTabStyle()
+        .confirmationDialog(
+            "Choose a Whisper size to download",
+            isPresented: $state.choosingWhisperModel
+        ) {
+            ForEach(WhisperModel.allCases) { model in
+                Button("\(model.label), \(model.downloadLabel)") { state.downloadWhisper(model) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Whisper is a one-time download, then works offline. Fast suits clear speech, Balanced suits everyday use and is a good first try for an accent, and Most accurate is best for strong accents or noisy rooms. You can change size or remove it later.")
+        }
         .alert(
             "Download Whisper \(state.pendingWhisperDownload?.label ?? "")?",
             isPresented: Binding(get: { state.pendingWhisperDownload != nil }, set: { if !$0 { state.pendingWhisperDownload = nil } }),
@@ -360,7 +358,108 @@ struct DictationSettingsTab: View {
     }
 }
 
-/// One option in the "Which should I choose?" list: who it suits, what you gain, what it costs.
+/// The "Help me choose" pop-up: quick picks by situation first, then each option's trade-offs.
+struct HelpMeChooseSheet: View {
+    @Bindable var state: AppState
+    @Binding var isPresented: Bool
+
+    private struct Pick: Identifiable {
+        let id = UUID()
+        let situation: String
+        let name: String
+        let recommendation: String
+        let engine: SpeechEngine
+        let size: WhisperModel?
+    }
+
+    private let picks = [
+        Pick(situation: "It understands me fine", name: "Apple SpeechTranscriber", recommendation: "Apple SpeechTranscriber. Nothing extra to download.",
+             engine: .speechTranscriber, size: nil),
+        Pick(situation: "It mishears my accent, or I speak fast or not in my first language",
+             name: "Whisper Balanced", recommendation: "Whisper Balanced. A good first thing to try.", engine: .whisper, size: .balanced),
+        Pick(situation: "I have a strong accent, a speech difference or disability, a noisy room, or lots of technical terms",
+             name: "Whisper Most accurate", recommendation: "Whisper Most accurate. Typically the most forgiving of how you speak.", engine: .whisper, size: .accurate),
+        Pick(situation: "I'm short on disk space but want better accuracy",
+             name: "Whisper Fast", recommendation: "Whisper Fast. The smallest download, though less accurate than the larger sizes.", engine: .whisper, size: .fast),
+    ]
+
+    private func isCurrent(_ engine: SpeechEngine, _ size: WhisperModel?) -> Bool {
+        state.engine == engine && (engine != .whisper || state.whisperModel == size)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Help me choose").font(.title2).fontWeight(.semibold)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Apple's engines keep the app small and quick, but they can struggle with accents and some speech patterns. Whisper is more forgiving, in exchange for a one-time download and a short wait after you let go of the key. Everything runs on your Mac either way, and you can switch back at any time.")
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Pick by situation").font(.headline).accessibilityAddTraits(.isHeader)
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(picks) { pick in
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(pick.situation).fontWeight(.medium)
+                                    Text(pick.recommendation).foregroundStyle(.secondary)
+                                }
+                                .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 8)
+                                if isCurrent(pick.engine, pick.size) {
+                                    Text("In use").foregroundStyle(.secondary)
+                                } else {
+                                    Button("Use this") { choose(pick.engine, pick.size) }
+                                        .accessibilityLabel("Use \(pick.name)")
+                                }
+                            }
+                            .accessibilityElement(children: .contain)
+                        }
+                    }
+
+                    Text("All the options").font(.headline).accessibilityAddTraits(.isHeader)
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(SpeechEngine.allCases) { engine in
+                            ChoiceGuideRow(title: engine.label, bestFor: engine.bestFor, benefit: engine.benefit,
+                                           tradeoff: engine.tradeoff, inUse: state.engine == engine)
+                            if engine == .whisper {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(WhisperModel.allCases) { model in
+                                        ChoiceGuideRow(title: "Whisper \(model.label), \(model.downloadLabel)", bestFor: model.bestFor,
+                                                       benefit: model.benefit, tradeoff: model.tradeoff,
+                                                       inUse: isCurrent(.whisper, model))
+                                    }
+                                }
+                                .padding(.leading, 14)
+                            }
+                        }
+                    }
+                    Text("Names and technical terms the recognizer keeps getting wrong can also be fixed with your custom vocabulary file, with any engine.")
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(20)
+            }
+            Divider()
+            HStack {
+                Spacer()
+                Button("Done") { isPresented = false }
+                    .keyboardShortcut(.defaultAction)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
+        }
+        .frame(width: 520, height: 600)
+    }
+
+    private func choose(_ engine: SpeechEngine, _ size: WhisperModel?) {
+        isPresented = false
+        // Let the sheet finish closing so a download prompt isn't swallowed by it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { state.use(engine, whisper: size) }
+    }
+}
+
+/// One option in the "Help me choose" list: who it suits, what you gain, what it costs.
 struct ChoiceGuideRow: View {
     let title: String
     let bestFor: String
@@ -381,13 +480,17 @@ struct ChoiceGuideRow: View {
             }
             Text(bestFor).font(.callout)
             Label { Text(benefit).foregroundStyle(.secondary) } icon: {
-                Image(systemName: "plus.circle.fill").foregroundStyle(.green)
+                Image(systemName: "plus.circle.fill").foregroundStyle(.green).accessibilityHidden(true)
             }
+            .accessibilityLabel("Benefit: \(benefit)")
             Label { Text(tradeoff).foregroundStyle(.secondary) } icon: {
-                Image(systemName: "minus.circle.fill").foregroundStyle(.orange)
+                Image(systemName: "minus.circle.fill").foregroundStyle(.orange).accessibilityHidden(true)
             }
+            .accessibilityLabel("Trade-off: \(tradeoff)")
         }
-        .font(.caption)
+        .font(.callout)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title)\(inUse ? ", in use" : ""). Best for: \(bestFor)")
     }
 }
 
