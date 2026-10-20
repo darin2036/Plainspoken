@@ -14,6 +14,7 @@ struct PlainspokenApp: App {
             renderSettings(to: CommandLine.arguments[i + 1])
             exit(0)
         }
+        NetworkGuard.install()
         AppState.shared.start()
     }
 
@@ -169,7 +170,7 @@ struct GeneralSettingsTab: View {
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("What you say and write never leaves your Mac. There are no cloud services, accounts, tracking or analytics. Transcripts are ephemeral: they are never saved or logged and exist only in memory while you use them. The app goes online only to download a speech model: Apple's, through macOS, or Whisper, and only if you choose it and confirm the download.")
+                Text("What you say and write never leaves your Mac. There are no cloud services, accounts, tracking or analytics. Transcripts are ephemeral: they are never saved or logged and exist only in memory while you use them. The app goes online only to download a speech model: Apple's, through macOS, or Whisper, and only if you choose it and confirm. At every other time the app blocks its own network access.")
             }
 
             Section {

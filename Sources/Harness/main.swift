@@ -12,6 +12,7 @@ struct Sample: Decodable {
     var category: String?
 }
 
+NetworkGuard.install()
 var path = "Harness/samples.json"
 var config = RewriterConfig()
 var only: Int?
@@ -39,6 +40,13 @@ while !argv.isEmpty {
         engine = name.hasPrefix("w") ? .whisper : name.hasPrefix("d") ? .dictationTranscriber : .speechTranscriber
     case "--whisper-model": whisperModel = WhisperModel(rawValue: argv.removeFirst()) ?? whisperModel
     case "--rewrite": rewriteTranscript = true
+    case "--probe-network":
+        // Proves the guard: a request outside a download window must fail.
+        do {
+            _ = try await URLSession.shared.data(from: URL(string: "https://huggingface.co")!)
+            print("probe: REQUEST WENT THROUGH (guard failed)")
+        } catch { print("probe: blocked as expected (\(error.localizedDescription))") }
+        exit(0)
     case "--vocab": vocabulary = argv.removeFirst().split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
     case "--stress": stress = Int(argv.removeFirst()) ?? 1
     case "--text": oneOff = argv.removeFirst()

@@ -14,6 +14,7 @@ First development version (0.1.0). Nothing has been released yet.
 
 ### Fixed
 
+- Whisper could silently re-download its tokenizer at load time if the local copy was missing. The tokenizer is now fetched and verified during the approved download, and the app blocks all of its own web requests outside an approved download, so that situation now fails with an error instead of going online. Checked by running dictation with the network denied at the OS level.
 - A rewrite fallback no longer writes the guard's reason to the system log, because for some guards it quoted words from what you dictated. Logs now hold only timings and error types.
 
 ### Added

@@ -122,14 +122,23 @@ public enum WhisperStore {
         if !isInstalled(model) {
             guard allowDownload else { throw WhisperSetupError.notInstalled }
             try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-            // Read the revision first so it names what we are about to fetch, not something newer.
-            let revision = await latestRevision()
-            _ = try await WhisperKit.download(variant: model.variant, downloadBase: base, from: repo) { p in
-                progress(p.fractionCompleted)
+            // The only place the app may touch the network. Loading inside the window also lets
+            // WhisperKit fetch and cache its tokenizer now, so later loads are fully offline.
+            let revision = try await NetworkGuard.allowing { () async throws -> String? in
+                // Read the revision first so it names what we are about to fetch, not something newer.
+                let revision = await latestRevision()
+                _ = try await WhisperKit.download(variant: model.variant, downloadBase: base, from: repo) { p in
+                    progress(p.fractionCompleted)
+                }
+                try await WhisperRuntime.shared.load(model)
+                return revision
             }
+            // Written last: "installed" means the model and tokenizer are both on disk.
             try Data((revision ?? "").utf8).write(to: marker(for: model))
+        } else {
+            // Network is blocked here. If anything is missing this fails instead of fetching it.
+            try await WhisperRuntime.shared.load(model)
         }
-        try await WhisperRuntime.shared.load(model)
         progress(1)
     }
 }
