@@ -9,7 +9,7 @@ private let log = Logger(subsystem: "io.github.darin2036.Plainspoken", category:
 
 /// Which tab Settings shows. The menu sets it so a prompt or link lands on the right page.
 enum SettingsTab: Hashable {
-    case general, appearance, dictation
+    case general, appearance, dictation, about
 }
 
 /// One entry in the menu's speech model picker: an Apple engine or a Whisper size.
@@ -166,6 +166,30 @@ final class AppState {
         if let build = info?["CFBundleVersion"] as? String { details.append("build \(build)") }
         if let commit = info?["PlainspokenCommit"] as? String { details.append(commit) }
         return details.isEmpty ? version : "\(version) (\(details.joined(separator: ", ")))"
+    }
+
+    /// A short block to paste into a bug report. Versions and hardware only: nothing about what
+    /// you have said or written, and nothing is sent anywhere. The user pastes it themselves.
+    var supportInfo: String {
+        func sysctl(_ name: String) -> String? {
+            var size = 0
+            guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+            var buffer = [CChar](repeating: 0, count: size)
+            guard sysctlbyname(name, &buffer, &size, nil, 0) == 0 else { return nil }
+            return String(cString: buffer)
+        }
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let model = engine == .whisper ? "Whisper \(whisperModel.label)" : engine.label
+        return """
+        Plainspoken \(versionDescription)
+        macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion), \(sysctl("machdep.cpu.brand_string") ?? "Apple silicon")
+        Speech model: \(model)
+        """
+    }
+
+    func copySupportInfo() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(supportInfo, forType: .string)
     }
 
     /// Asks GitHub for the latest release. `automatic` checks run quietly at most once a day and

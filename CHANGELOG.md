@@ -25,6 +25,7 @@ First development version (0.1.0). Nothing has been released yet.
 
 ### Added
 
+- An About tab in Settings. It leads with the local-first promise (everything runs on your Mac, no cloud services) and a plain list of what the app does with your data, then shows where Whisper models are stored, links to the source, issue tracker, license, security policy and privacy details, and a Copy Support Info button (version, macOS, chip and speech model only, nothing sent anywhere).
 - The resting pill is clickable: click it to start dictating and click it again to finish, as an alternative to holding the hotkey. It never takes focus, so text still lands in the app you were using.
 - Update notifications. About once a day the app checks GitHub for a newer release and, if there is one, shows "Version X is available" in the menu and in Settings > General, with a button that opens the release page. It never installs anything itself. The check sends nothing about you or your Mac, can be switched off in Settings (Check automatically), and can also be run by hand with Check for Updates. The privacy text now lists this check alongside model downloads.
 - A Privacy note at the top of Settings > General, and a rewritten Privacy and control section in the README, stating that the app runs locally with no cloud services and exactly when it goes online.

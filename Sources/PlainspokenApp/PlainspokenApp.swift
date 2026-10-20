@@ -41,6 +41,11 @@ struct MenuView: View {
         state.requiredPermissions.filter { state.granted[$0] != true }
     }
 
+    private var hasRecentActivity: Bool {
+        !state.partialText.isEmpty || state.lastTranscript != nil
+            || state.lastTiming != nil || state.lastRecording != nil || state.statusNote != nil
+    }
+
     private var speechModelNeedsAttention: Bool { state.speechModel != .ready }
 
     private var needsSetup: Bool {
@@ -90,6 +95,11 @@ struct MenuView: View {
 
             Divider()
             quickPickers
+
+            // Breathing room between the pickers and the recent transcription below them.
+            if hasRecentActivity {
+                Spacer().frame(height: 8)
+            }
 
             if let note = state.statusNote {
                 Text(note).font(.caption).foregroundStyle(.red)
@@ -259,6 +269,9 @@ struct SettingsView: View {
             DictationSettingsTab(state: state)
                 .tabItem { Label("Dictation", systemImage: "text.bubble") }
                 .tag(SettingsTab.dictation)
+            AboutSettingsTab(state: state)
+                .tabItem { Label("About", systemImage: "info.circle") }
+                .tag(SettingsTab.about)
         }
         .frame(width: 480)
         // Download prompts live here, not in a tab, so they show wherever the request came from
@@ -535,6 +548,136 @@ struct DictationSettingsTab: View {
             }
         }
         .settingsTabStyle()
+    }
+}
+
+/// Everything someone needs to know about the app, with the local-first promise first.
+struct AboutSettingsTab: View {
+    @Bindable var state: AppState
+    @State private var copied = false
+
+    private static let repo = "https://github.com/darin2036/Plainspoken"
+    private static let links: [(title: String, symbol: String, path: String)] = [
+        ("Source code", "chevron.left.forwardslash.chevron.right", ""),
+        ("Report an issue", "exclamationmark.bubble", "/issues"),
+        ("MIT license", "doc.text", "/blob/main/LICENSE"),
+        ("Security policy", "lock.shield", "/blob/main/SECURITY.md"),
+        ("Privacy details", "hand.raised", "/blob/main/README.md#privacy-and-control"),
+    ]
+
+    private var whisperMB: Int {
+        WhisperModel.allCases.compactMap { WhisperStore.installedMB($0) }.reduce(0, +)
+    }
+
+    var body: some View {
+        Form {
+            // The point of the app, before anything else.
+            Section {
+                VStack(spacing: 8) {
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 34))
+                        .foregroundStyle(.tint)
+                        .accessibilityHidden(true)
+                    Text("Everything runs on your Mac")
+                        .font(.title2).fontWeight(.semibold)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Plainspoken is local by design. Your voice and your words never leave this Mac, and there are no cloud services behind it.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+
+            Section {
+                PrivacyPoint("No accounts, API keys or cloud services", symbol: "icloud.slash")
+                PrivacyPoint("Transcripts are ephemeral: never saved, never logged", symbol: "memorychip")
+                PrivacyPoint("No tracking, analytics or crash reporting", symbol: "eye.slash")
+                PrivacyPoint("Works offline once its models are installed", symbol: "wifi.slash")
+                PrivacyPoint("Goes online for only two things: speech models you choose to download, and a daily check for a new release you can turn off. The rest of the time the app blocks its own network access.", symbol: "network.badge.shield.half.filled")
+            } header: {
+                Text("Your privacy")
+            }
+
+            if whisperMB > 0 {
+                Section {
+                    LabeledContent("Whisper models", value: "\(whisperMB) MB on this Mac")
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([WhisperStore.base])
+                    }
+                } header: {
+                    Text("Stored on your Mac")
+                }
+            }
+
+            Section {
+                ForEach(Self.links, id: \.title) { link in
+                    Link(destination: URL(string: Self.repo + link.path)!) {
+                        Label {
+                            Text(link.title)
+                        } icon: {
+                            Image(systemName: link.symbol).frame(width: 22)
+                        }
+                    }
+                }
+            } header: {
+                Text("Links")
+            }
+
+            Section {
+                LabeledContent("Version") {
+                    Text(state.versionDescription).textSelection(.enabled)
+                }
+                HStack {
+                    Text("Copy details for a bug report")
+                    Spacer()
+                    Button(copied ? "Copied" : "Copy Support Info") {
+                        state.copySupportInfo()
+                        copied = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            copied = false
+                        }
+                    }
+                }
+            } header: {
+                SettingsHeader("Support", info: "Copies the app version, your macOS version, your Mac's chip and the speech model you have selected. Nothing you have said or written, and nothing is sent anywhere: you paste it into an issue yourself.")
+            }
+
+            Section {
+                Text("Speech recognition and the rewrite use Apple's on-device Speech and Foundation Models frameworks. The optional Whisper engine is OpenAI's Whisper model (MIT license), run on your Mac with WhisperKit by Argmax (MIT license). Plainspoken is free and open source under the MIT license.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Credits")
+            }
+        }
+        .formStyle(.grouped)
+        .frame(height: 560)
+    }
+}
+
+/// One line of the privacy list: an icon the screen reader skips, and the sentence.
+private struct PrivacyPoint: View {
+    let text: String
+    let symbol: String
+
+    init(_ text: String, symbol: String) {
+        self.text = text
+        self.symbol = symbol
+    }
+
+    var body: some View {
+        Label {
+            Text(text).fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: symbol)
+                .foregroundStyle(.green)
+                .frame(width: 22)
+                .accessibilityHidden(true)
+        }
     }
 }
 

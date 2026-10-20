@@ -145,6 +145,7 @@ Open them from the menu bar icon.
 | **Idle indicator** | Turns the small resting pill on or off. Click the pill to start dictating; click it again to finish. |
 | **Speech engine** | `SpeechTranscriber` (newer) or `DictationTranscriber` (classic). Try both on your own voice. |
 | **Custom vocabulary** | Opens the vocabulary file, described next. |
+| **About** | The local-first promise and what the app does with your data, where Whisper models are stored, links (source, issues, license, security policy), your version, and a button that copies version and hardware details for a bug report. |
 
 ### Custom vocabulary
 

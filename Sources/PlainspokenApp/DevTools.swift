@@ -24,6 +24,7 @@ func renderSettings(to dir: String) {
     snapshot(AppearanceSettingsTab(state: state), as: "settings-appearance")
     snapshot(DictationSettingsTab(state: state), as: "settings-dictation")
     snapshot(MenuView(state: state), as: "menu")
+    snapshot(AboutSettingsTab(state: state), as: "settings-about")
     snapshot(HelpMeChooseSheet(state: state, isPresented: .constant(true)), as: "help-me-choose")
 }
 
