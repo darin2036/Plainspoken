@@ -246,6 +246,9 @@ struct SpeechModelRow: View {
             case .preparing(let fraction):
                 ProgressView().controlSize(.small)
                 Text(fraction.map { "Downloading speech model… \(Int($0 * 100))%" } ?? "Preparing speech model…")
+            case .installing:
+                ProgressView().controlSize(.small)
+                Text("Installing speech model… this can take a minute")
             case .failed(let why):
                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                 Text(why).font(.caption)
@@ -470,8 +473,10 @@ struct DictationSettingsTab: View {
     }
 
     private var downloading: Bool {
-        if case .preparing = state.speechModel { return state.engine == .whisper }
-        return false
+        switch state.speechModel {
+        case .preparing, .installing: return state.engine == .whisper
+        case .ready, .failed: return false
+        }
     }
 
     var body: some View {

@@ -37,6 +37,7 @@ enum UpdateStatus: Equatable {
 
 enum SpeechModelState: Equatable {
     case preparing(Double?)  // download fraction, nil while just checking
+    case installing  // downloaded, now compiling and loading the model
     case ready
     case failed(String)
 }
@@ -475,11 +476,16 @@ final class AppState {
         }
         prepareTask = Task { [weak self] in
             do {
-                try await WhisperStore.prepare(model, allowDownload: allowDownload) { fraction in
+                try await WhisperStore.prepare(model, allowDownload: allowDownload, progress: { fraction in
                     Task { @MainActor in
+                        // Only while still downloading, so a late update can't undo `.installing`.
                         if case .preparing = self?.speechModel { self?.speechModel = .preparing(fraction) }
                     }
-                }
+                }, installing: {
+                    Task { @MainActor in
+                        if case .preparing = self?.speechModel { self?.speechModel = .installing }
+                    }
+                })
                 guard !Task.isCancelled else { return }
                 self?.approvedWhisperDownloads.remove(model)
                 self?.whisperStoreVersion += 1
