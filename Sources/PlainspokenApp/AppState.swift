@@ -370,6 +370,15 @@ final class AppState {
         }
     }
 
+    /// Fills the menu's recent-activity area with sample content, for the `--render-settings` dev tool.
+    func loadPreviewActivity() {
+        lastTranscript = "Remember, the intent is to post this on my GitHub page so that people can see the work."
+        lastHeard = "Remember, the intent will be that we will post this on my GitHub page so people can see the work."
+        lastTiming = "Transcribed in 0.2s, rewritten in 1.9s (rewritten), pasted without a detected text box (text also left on the clipboard)"
+        lastRecording = "Heard 18.1s of audio, peak -17 dB"
+        statusNote = "No text box detected; pasted anyway. The text is also on your clipboard."
+    }
+
     func copyLastTranscript() {
         guard let lastTranscript else { return }
         NSPasteboard.general.clearContents()
