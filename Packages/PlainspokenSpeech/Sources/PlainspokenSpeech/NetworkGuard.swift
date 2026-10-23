@@ -45,7 +45,7 @@ public final class NetworkGuard: URLProtocol {
 
     public override func startLoading() {
         // Only the host is logged, never a full URL, so nothing sensitive can end up in the log.
-        NSLog("Plainspoken blocked a network request to %@", request.url?.host ?? "unknown host")
+        NSLog("%@ blocked a network request to %@", ProcessInfo.processInfo.processName, request.url?.host ?? "unknown host")
         client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
     }
 

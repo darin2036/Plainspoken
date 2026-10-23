@@ -201,7 +201,8 @@ Plainspoken is designed to run entirely on your Mac, with your privacy and your 
 ## Development
 
 ```
-Sources/PlainspokenCore/   Rewriter, Prompts, Guards, LightCleanup, Vocabulary, Chunker, Transcriber
+Packages/PlainspokenSpeech/  speech layer shared with other apps: engines, languages, vocabulary, file transcription, network guard (no dependencies, no Whisper)
+Sources/PlainspokenCore/   Rewriter, Prompts, Guards, LightCleanup, Chunker, the engine list, Whisper
 Sources/PlainspokenApp/    menu bar app, hotkey, audio capture, bar, visualizers, text insertion
 Sources/Harness/           command-line tool for tuning the rewrite without the app
 Harness/samples.json       test sentences: {raw, ideal, category}
