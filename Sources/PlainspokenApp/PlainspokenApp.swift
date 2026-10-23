@@ -120,14 +120,38 @@ struct MenuView: View {
 }
 
 /// The menu bar panel keeps its old window shadow when its content changes height while it is
-/// open (live transcript text, an update notice), which shows as a ghost edge under the panel.
-/// Recomputing the shadow after each layout pass clears it.
+/// open (live transcript text, an update notice, the Details disclosure), which shows as a ghost
+/// edge under the panel. The window is resized after SwiftUI's layout pass, and animated resizes
+/// finish later still, so recompute the shadow on every window resize and once more after the
+/// animation settles.
 private struct ShadowRefresher: NSViewRepresentable {
     final class RefreshingView: NSView {
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
+            guard let window else { return }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResizeNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.refresh() }
+            refresh()
+        }
+
         override func layout() {
             super.layout()
-            DispatchQueue.main.async { [weak self] in self?.window?.invalidateShadow() }
+            refresh()
         }
+
+        private func refresh() {
+            DispatchQueue.main.async { [weak self] in self?.window?.invalidateShadow() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.window?.invalidateShadow()
+            }
+        }
+
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     }
 
     func makeNSView(context: Context) -> RefreshingView { RefreshingView() }
