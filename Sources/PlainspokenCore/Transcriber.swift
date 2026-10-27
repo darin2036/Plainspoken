@@ -14,7 +14,7 @@ public enum SpeechEngine: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
     public var label: String {
         switch self {
-        case .speechTranscriber: return "Apple SpeechTranscriber (newer)"
+        case .speechTranscriber: return "SpeechTranscriber (Apple AI Based)"
         case .dictationTranscriber: return "Apple DictationTranscriber (classic)"
         case .whisper: return "Whisper (optional download)"
         }
