@@ -126,16 +126,24 @@ struct MenuView: View {
 /// animation settles.
 private struct ShadowRefresher: NSViewRepresentable {
     final class RefreshingView: NSView {
-        private var observer: NSObjectProtocol?
+        private var observers: [NSObjectProtocol] = []
+        private var generation = 0
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if let observer { NotificationCenter.default.removeObserver(observer) }
-            observer = nil
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
             guard let window else { return }
-            observer = NotificationCenter.default.addObserver(
-                forName: NSWindow.didResizeNotification, object: window, queue: .main
-            ) { [weak self] _ in self?.refresh() }
+            // The panel's window is reused across opens, so also refresh whenever it is shown.
+            let names: [Notification.Name] = [
+                NSWindow.didResizeNotification, NSWindow.didBecomeKeyNotification,
+                NSWindow.didChangeOcclusionStateNotification,
+            ]
+            observers = names.map { name in
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
+                    [weak self] _ in self?.refresh()
+                }
+            }
             refresh()
         }
 
@@ -144,14 +152,24 @@ private struct ShadowRefresher: NSViewRepresentable {
             refresh()
         }
 
+        /// `invalidateShadow()` alone is not reliable here, so also toggle `hasShadow`, which makes
+        /// the window server rebuild the shadow from the current shape. Repeated over the first
+        /// second and a half because the resize animation and SwiftUI's layout settle at
+        /// unpredictable times.
         private func refresh() {
-            DispatchQueue.main.async { [weak self] in self?.window?.invalidateShadow() }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                self?.window?.invalidateShadow()
+            generation += 1
+            let current = generation
+            for delay in [0, 0.1, 0.35, 0.8, 1.5] {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self, self.generation == current, let window = self.window else { return }
+                    window.hasShadow = false
+                    window.hasShadow = true
+                    window.invalidateShadow()
+                }
             }
         }
 
-        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
     }
 
     func makeNSView(context: Context) -> RefreshingView { RefreshingView() }
